@@ -30,6 +30,10 @@ ffi.cdef("""
     typedef uint32_t float32_t;
     // Convert a 32-bit float (given as its bit pattern) to float16.
     float16_t f32_to_f16(float32_t a);
+    // Add two float16 values.
+    float16_t f16_add(float16_t a, float16_t b);
+    // Subtract two float16 values.
+    float16_t f16_sub(float16_t a, float16_t b);
     // Multiply two float16 values.
     float16_t f16_mul(float16_t a, float16_t b);
     // Divide two float16 values.
@@ -60,13 +64,24 @@ def float_to_f16_bits(val):
     bits32 = float_to_float32_bits(val)
     return lib.f32_to_f16(bits32)
 
-def f16_mul_softfloat(a_f16, b_f16):
+def f16_add_softfloat(a_f16, b_f16):
     """
-    Multiplies two half-precision numbers (provided as 16-bit integers)
-    using SoftFloat's f16_mul.
+    Adds two half-precision numbers (provided as 16-bit integers)
+    using SoftFloat's f16_add.
     Returns the 16-bit integer result.
     """
-    return lib.f16_mul(a_f16, b_f16)
+    return lib.f16_add(a_f16, b_f16)
+
+def f16_add_python(a, b):
+    """
+    Convenience function: add two Python floats interpreted as float16,
+    using SoftFloat's f16_add, and return a Python float result.
+    """
+    a_bits = np.float16(a).view(np.uint16)
+    b_bits = np.float16(b).view(np.uint16)
+    res_bits = lib.f16_add(a_bits, b_bits)
+    return float16_bits_to_float(res_bits)
+
 
 def f16_div_softfloat(a_f16, b_f16):
     """
@@ -75,6 +90,52 @@ def f16_div_softfloat(a_f16, b_f16):
     Returns the 16-bit integer result.
     """
     return lib.f16_div(a_f16, b_f16)
+
+def f16_div_python(a, b):
+    """
+    Convenience function: divide two Python floats interpreted as float16,
+    using SoftFloat's f16_div, and return a Python float result.
+    """
+    a_bits = np.float16(a).view(np.uint16)
+    b_bits = np.float16(b).view(np.uint16)
+    res_bits = lib.f16_div(a_bits, b_bits)
+    return float16_bits_to_float(res_bits)
+
+def f16_mul_softfloat(a_f16, b_f16):
+    """
+    Multiplies two half-precision numbers (provided as 16-bit integers)
+    using SoftFloat's f16_mul.
+    Returns the 16-bit integer result.
+    """
+    return lib.f16_mul(a_f16, b_f16)
+
+def f16_mul_python(a, b):
+    """
+    Convenience function: multiply two Python floats interpreted as float16,
+    using SoftFloat's f16_mul, and return a Python float result.
+    """
+    a_bits = np.float16(a).view(np.uint16)
+    b_bits = np.float16(b).view(np.uint16)
+    res_bits = lib.f16_mul(a_bits, b_bits)
+    return float16_bits_to_float(res_bits)
+
+def f16_sub_softfloat(a_f16, b_f16):
+    """
+    Subtracts two half-precision numbers (provided as 16-bit integers)
+    using SoftFloat's f16_sub.
+    Returns the 16-bit integer result.
+    """
+    return lib.f16_sub(a_f16, b_f16)
+
+def f16_sub_python(a, b):
+    """
+    Convenience function: subtract two Python floats interpreted as float16,
+    using SoftFloat's f16_sub, and return a Python float result.
+    """
+    a_bits = np.float16(a).view(np.uint16)
+    b_bits = np.float16(b).view(np.uint16)
+    res_bits = lib.f16_sub(a_bits, b_bits)
+    return float16_bits_to_float(res_bits)
 
 def f16_to_f32_softfloat(a_f16):
     """
@@ -89,26 +150,6 @@ def float16_bits_to_float(f16_bits):
     Convert a 16-bit integer (representing a float16) to a Python float using NumPy.
     """
     return np.array([f16_bits], dtype=np.uint16).view(np.float16)[0]
-
-def f16_mul_python(a, b):
-    """
-    Convenience function: multiply two Python floats interpreted as float16,
-    using SoftFloat's f16_mul, and return a Python float result.
-    """
-    a_bits = np.float16(a).view(np.uint16)
-    b_bits = np.float16(b).view(np.uint16)
-    res_bits = lib.f16_mul(a_bits, b_bits)
-    return float16_bits_to_float(res_bits)
-
-def f16_div_python(a, b):
-    """
-    Convenience function: divide two Python floats interpreted as float16,
-    using SoftFloat's f16_div, and return a Python float result.
-    """
-    a_bits = np.float16(a).view(np.uint16)
-    b_bits = np.float16(b).view(np.uint16)
-    res_bits = lib.f16_div(a_bits, b_bits)
-    return float16_bits_to_float(res_bits)
 
 def softfloat_roundPackToF16(sign, exp, sig):
     """
@@ -125,8 +166,16 @@ if __name__ == "__main__":
     # quotient_f16 = f16_div_softfloat(float_to_f16_bits(opA), float_to_f16_bits(opB))
     # print(f"float16 of {opA} / {opB} = 0x{quotient_f16:04X} ({float16_bits_to_float(quotient_f16)})")
 
-    sign = False
-    exp = 15
-    sig = 0x7e88
-    result = softfloat_roundPackToF16(sign, exp, sig)
-    print(f"Packed result: 0x{result:04X} ({float16_bits_to_float(result)})")
+    # sign = False
+    # exp = 15
+    # sig = 0x7e88
+    # result = softfloat_roundPackToF16(sign, exp, sig)
+    # print(f"Packed result: 0x{result:04X} ({float16_bits_to_float(result)})")
+
+
+    opA = -10.0
+    print(f"float16 of {opA} = 0x{float_to_f16_bits(opA):04X}")
+    opB = 5.0
+    print(f"float16 of {opB} = 0x{float_to_f16_bits(opB):04X}")
+    sum_f16 = f16_add_softfloat(float_to_f16_bits(opA), float_to_f16_bits(opB))
+    print(f"float16 of {opA} + {opB} = 0x{sum_f16:04X} ({float16_bits_to_float(sum_f16)})")
