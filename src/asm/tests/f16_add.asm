@@ -38,15 +38,58 @@ exit:
     include "../include/debug.inc"
 
 ; APPLICATION INCLUDES
+    include "../softfloat/globals.inc"
+    include "../softfloat/internals.inc"
     include "../softfloat/f16_add.inc"
     include "../softfloat/s_addMagsF16.inc"
     include "../softfloat/s_subMagsF16.inc"
-    include "../softfloat/internals.inc"
     include "../softfloat/s_normSubnormalF16Sig.inc"
     include "../softfloat/s_roundPackToF16.inc"
     include "../softfloat/s_shiftRightJam32.inc"
 
 main:
+    ; ld a,0x1D
+    ; call printDec8
+    ; call printNewLine
+    ; cp 0x1E
+    ; call dumpFlags
+    ; ret
+
+; ; PASSES
+;     call printInline
+;     asciz "0.0 + 6e-05 = 6.002187728881836e-05\r\n"
+;     call printInline
+;     asciz "0x0000 + 0x03EF = 0x03EF\r\n"
+;     ld hl,0x0000 ; 0.0
+;     ld de,0x03EF ; 6e-05
+;     call f16_add
+;     PRINT_HL_HEX " assembly result"
+;     call printNewLine
+
+; ; PASSES
+;     call printInline
+;     asciz "1.0 + 1.0 = 2.0\r\n"
+;     call printInline
+;     asciz "0x3C00 + 0x3C00 = 0x4000\r\n"
+;     ld hl,0x3C00 ; 1.0
+;     ld de,0x3C00 ; 1.0
+;     call f16_add
+;     PRINT_HL_HEX " assembly result"
+;     call printNewLine
+
+; ; FAILS
+;     call printInline
+;     asciz "inf + 1.0 = inf\r\n"
+;     call printInline
+;     asciz "0x7C00 + 0x3C00 = 0x7C00\r\n"
+;     ld hl,0x7C00 ; inf
+;     ld de,0x3C00 ; 1.0
+;     call f16_add
+;     PRINT_HL_HEX " assembly result"
+;     call printNewLine
+
+;     ret
+
     call vdu_cls
     call printInline
     asciz "\r\nf16_add test\r\n"

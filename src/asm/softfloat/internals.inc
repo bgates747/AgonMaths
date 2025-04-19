@@ -1,6 +1,26 @@
 ; #define signF16UI( a ) ((bool) ((uint16_t) (a)>>15))
+    MACRO signF16UI
+        ld a,h
+        and %10000000
+        ld c,a
+    ENDMACRO
+
 ; #define expF16UI( a ) ((int_fast8_t) ((a)>>10) & 0x1F)
+    MACRO expF16UI
+        ld a,h
+        rrca
+        rrca
+        and %00011111
+        ld b,a
+    ENDMACRO
+
 ; #define fracF16UI( a ) ((a) & 0x03FF)
+    MACRO fracF16UI
+        ld a,h
+        and %00000111
+        ld h,a
+    ENDMACRO
+
 ; inputs: hl is the float16 to unpack
 ; outputs: c is the sign (0=pos,1=neg), b is the biased exponent, hl is the normalised mantissa
 ;          sign and zero flags are correctly (re)set, carry set if hl is +/-zero
