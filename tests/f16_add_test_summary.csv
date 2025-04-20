@@ -1,3 +1,4 @@
 op1_category,op2_category,python_category,asm_category,correct,incorrect
-Normal,Normal,Inf,Inf,520,0
-Normal,Normal,Normal,Normal,480,0
+Normal,Normal,Normal,Normal,989,0
+Normal,Subnormal,Normal,Normal,7,0
+Subnormal,Normal,Normal,Normal,4,0

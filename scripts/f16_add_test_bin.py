@@ -41,9 +41,9 @@ def generate_fp16_add_test(N, op1_min, op1_max, op2_min, op2_max, outfile):
 if __name__ == "__main__":
     NUM_TESTS = 1000
     OP1_MIN = 0.0
-    OP1_MAX = 65504.0
+    OP1_MAX = 0.01
     OP2_MIN = 0.0
-    OP2_MAX = 65504.0
+    OP2_MAX = 0.01
     FREQ_SPECIALS = 0.0
 
     GENERATE_OUTFILE = 'tests/f16_add.bin'

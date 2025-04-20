@@ -81,15 +81,15 @@ main:
 ;     ret
 
     ; call printInline
-    ; asciz "6148.0 + 0.3701171875 = 6148.0\r\n"
+    ; asciz "0.01558685302734375 + 4.124641418457031e-05 = 0.015625\r\n"
     ; call printInline
-    ; asciz "0x35EC + 0x6E01 = 0x6E01\r\n"
-    ; ld hl,0x35EC ; 0x35EC
-    ; ld de,0x6E01 ; 0x6E01
+    ; asciz "0x23FB + 0x02B4 = 0x2400\r\n"
+    ; ld hl,0x23FB ; 0x23FB
+    ; ld de,0x02B4 ; 0x02B4
     ; call f16_add
     ; PRINT_HL_HEX " assembly result"
     ; call printNewLine
-    
+
     ; ret
 
     call vdu_cls

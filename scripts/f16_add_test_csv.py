@@ -58,7 +58,7 @@ def f16_to_f32_softfloat(a_f16):
 # ----------------------------
 # Main Combined Processing
 # ----------------------------
-def process_fp16_testfile(infile, detail_outfile, summary_outfile, errors_only=True):
+def process_fp16_testfile(infile, detail_outfile, summary_outfile, errors_only):
     record_size = 8
     results_by_category = defaultdict(lambda: {'correct': 0, 'incorrect': 0})
 
@@ -127,4 +127,5 @@ if __name__ == "__main__":
     BINFILE = 'tests/f16_add.bin'
     DETAILCSV = 'tests/f16_add_test_detail.csv'
     SUMMARYCSV = 'tests/f16_add_test_summary.csv'
-    process_fp16_testfile(BINFILE, DETAILCSV, SUMMARYCSV)
+    ERRORS_ONLY = True
+    process_fp16_testfile(BINFILE, DETAILCSV, SUMMARYCSV, ERRORS_ONLY)

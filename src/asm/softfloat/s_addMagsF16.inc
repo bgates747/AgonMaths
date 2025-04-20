@@ -143,9 +143,12 @@ softfloat_addMagsF16:
             ld hl,(ix+sigA)
             ld a,(ix+expA)
             or a
-            jp z,@F
+            jr z,@expA_Zero
             set 2,h ; set implicit 1
-@@:
+            jr @set_sigY_to_sigA
+@expA_Zero:
+            add hl,hl
+@set_sigY_to_sigA:
             ld (ix+sigY),hl ; TODO: necessary?
 ;         shiftDist = 19 + expDiff;
             ld a,(ix+expDiff)
@@ -195,9 +198,12 @@ softfloat_addMagsF16:
             ld hl,(ix+sigB)
             ld a,(ix+expB)
             or a
-            jp z,@F
+            jr z,@expB_Zero
             set 2,h ; set implicit 1
-@@:
+            jr @set_sigY_to_sigB
+@expB_Zero:            
+            add hl,hl ; sigB + sigB
+@set_sigY_to_sigB:
             ld (ix+sigY),hl ; TODO: necessary?
             ; PRINT_HL_HEX "sigY = sigB + (expB ? 0x0400 : sigB)" ; DEBUG 
 
