@@ -260,6 +260,8 @@
     ENDMACRO
 
     MACRO PRINT_AUHL_HEX msg
+        push af
+        push hl
         push de
         push af
         ld a,'0'
@@ -271,6 +273,8 @@
         call printInline
         asciz msg,"\r\n"
         pop de
+        pop hl
+        pop af
     ENDMACRO
 
     MACRO PRINT_BC_HEX msg

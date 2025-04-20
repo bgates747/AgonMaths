@@ -58,25 +58,26 @@ main:
 @read_loop:
     call test_read_data
     jr z,@read_end
+    ld iy,filedata
 @calc_loop:
 ; perform multiplication 
-    ld hl,(ix+0) ; op1
-    ld de,(ix+2) ; op2
+    ld hl,(iy+0) ; op1
+    ld de,(iy+2) ; op2
     call mul_16_32
-    ld (ix+8),e ; assembly product low byte
-    ld (ix+9),d ; assembly product middle low byte
-    ld (ix+10),l ; assembly product middle high byte
-    ld (ix+11),h ; assembly product high byte
+    ld (iy+8),e ; assembly product low byte
+    ld (iy+9),d ; assembly product middle low byte
+    ld (iy+10),l ; assembly product middle high byte
+    ld (iy+11),h ; assembly product high byte
 ; check for error
-    ld e,(ix+6) ; python product middle high byte
-    ld d,(ix+7) ; python product high byte
+    ld e,(iy+6) ; python product middle high byte
+    ld d,(iy+7) ; python product high byte
     or a ; clear carry
     sbc.s hl,de
     jr nz,@calc_error
-    ld l,(ix+8) ; assembly product low byte
-    ld h,(ix+9) ; assembly product middle low byte
-    ld e,(ix+4) ; python product low byte
-    ld d,(ix+5) ; python product middle low byte
+    ld l,(iy+8) ; assembly product low byte
+    ld h,(iy+9) ; assembly product middle low byte
+    ld e,(iy+4) ; python product low byte
+    ld d,(iy+5) ; python product middle low byte
     or a ; clear carry
     sbc.s hl,de
     jr z,@next_record
@@ -88,7 +89,7 @@ main:
 @next_record:
 ; write results to file buffer
     ld de,(bytes_per_record)
-    add ix,de; bump data pointer
+    add iy,de; bump data pointer
     ld hl,(records)
     inc hl
     ld (records),hl

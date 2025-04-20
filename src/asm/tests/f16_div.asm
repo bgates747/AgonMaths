@@ -58,19 +58,20 @@ main:
 @read_loop:
     call test_read_data
     jr z,@read_end
+    ld iy,filedata
 @calc_loop:
 ; perform division 
-    ld l,(ix+0) ; op1 low byte
-    ld h,(ix+1) ; op1 high byte
-    ld e,(ix+2) ; op2 low byte
-    ld d,(ix+3) ; op2 high byte
+    ld l,(iy+0) ; op1 low byte
+    ld h,(iy+1) ; op1 high byte
+    ld e,(iy+2) ; op2 low byte
+    ld d,(iy+3) ; op2 high byte
     call f16_div
 ; write results to file buffer
-    ld (ix+6),l ; assembly quotient low byte
-    ld (ix+7),h ; assembly quotient high byte
+    ld (iy+6),l ; assembly quotient low byte
+    ld (iy+7),h ; assembly quotient high byte
 ; check for error
-    ld e,(ix+4) ; python quotient low byte
-    ld d,(ix+5) ; python quotient high byte
+    ld e,(iy+4) ; python quotient low byte
+    ld d,(iy+5) ; python quotient high byte
     or a ; clear carry
     sbc.s hl,de
     jr z,@next_record
@@ -81,7 +82,7 @@ main:
 @next_record:
 ; write results to file buffer
     ld de,(bytes_per_record)
-    add ix,de; bump data pointer
+    add iy,de; bump data pointer
     ld hl,(records)
     inc hl
     ld (records),hl

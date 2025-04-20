@@ -48,47 +48,49 @@ exit:
     include "../softfloat/s_shiftRightJam32.inc"
 
 main:
-    ; ld a,0x1D
-    ; call printDec8
-    ; call printNewLine
-    ; cp 0x1E
-    ; call dumpFlags
-    ; ret
+    ; ld hl,0x0601
+    ; ld bc,0x1b00
+    ; call packToF16UI
+    ; PRINT_HL_HEX " packed to F16UI"
+    ; RET
 
-; ; PASSES
-;     call printInline
-;     asciz "0.0 + 6e-05 = 6.002187728881836e-05\r\n"
-;     call printInline
-;     asciz "0x0000 + 0x03EF = 0x03EF\r\n"
-;     ld hl,0x0000 ; 0.0
-;     ld de,0x03EF ; 6e-05
-;     call f16_add
-;     PRINT_HL_HEX " assembly result"
-;     call printNewLine
+    
+    ; -14	0xF2
+    ; -13	0xF3
+    ; -12	0xF4
 
-; ; PASSES
+;     ld d,-12
+;     ld b,3
+; @loop:
+;     ld a,-13
+;     cp d
+;     ld a,d
+;     jp c,@F
+;     call printDecS8 
 ;     call printInline
-;     asciz "1.0 + 1.0 = 2.0\r\n"
-;     call printInline
-;     asciz "0x3C00 + 0x3C00 = 0x4000\r\n"
-;     ld hl,0x3C00 ; 1.0
-;     ld de,0x3C00 ; 1.0
-;     call f16_add
-;     PRINT_HL_HEX " assembly result"
-;     call printNewLine
-
-; ; FAILS
-;     call printInline
-;     asciz "inf + 1.0 = inf\r\n"
-;     call printInline
-;     asciz "0x7C00 + 0x3C00 = 0x7C00\r\n"
-;     ld hl,0x7C00 ; inf
-;     ld de,0x3C00 ; 1.0
-;     call f16_add
-;     PRINT_HL_HEX " assembly result"
-;     call printNewLine
-
+;     asciz " lte -13\r\n"
+;     dec d
+;     djnz @loop
 ;     ret
+; @@:
+;     call printDecS8 
+;     call printInline
+;     asciz " gt  -13\r\n"
+;     dec d
+;     djnz @loop
+;     ret
+
+    ; call printInline
+    ; asciz "6148.0 + 0.3701171875 = 6148.0\r\n"
+    ; call printInline
+    ; asciz "0x35EC + 0x6E01 = 0x6E01\r\n"
+    ; ld hl,0x35EC ; 0x35EC
+    ; ld de,0x6E01 ; 0x6E01
+    ; call f16_add
+    ; PRINT_HL_HEX " assembly result"
+    ; call printNewLine
+    
+    ; ret
 
     call vdu_cls
     call printInline
@@ -102,19 +104,20 @@ main:
 @read_loop:
     call test_read_data
     jr z,@read_end
+    ld iy,filedata
 @calc_loop:
-; perform division 
-    ld l,(ix+0) ; op1 low byte
-    ld h,(ix+1) ; op1 high byte
-    ld e,(ix+2) ; op2 low byte
-    ld d,(ix+3) ; op2 high byte
+; perform operation 
+    ld l,(iy+0) ; op1 low byte
+    ld h,(iy+1) ; op1 high byte
+    ld e,(iy+2) ; op2 low byte
+    ld d,(iy+3) ; op2 high byte
     call f16_add
 ; write results to file buffer
-    ld (ix+6),l ; assembly sum low byte
-    ld (ix+7),h ; assembly sum high byte
+    ld (iy+6),l ; assembly sum low byte
+    ld (iy+7),h ; assembly sum high byte
 ; check for error
-    ld e,(ix+4) ; python sum low byte
-    ld d,(ix+5) ; python sum high byte
+    ld e,(iy+4) ; python sum low byte
+    ld d,(iy+5) ; python sum high byte
     or a ; clear carry
     sbc.s hl,de
     jr z,@next_record
@@ -125,7 +128,7 @@ main:
 @next_record:
 ; write results to file buffer
     ld de,(bytes_per_record)
-    add ix,de; bump data pointer
+    add iy,de; bump data pointer
     ld hl,(records)
     inc hl
     ld (records),hl

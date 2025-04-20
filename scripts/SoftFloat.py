@@ -189,51 +189,37 @@ def parse_float16_input(x):
 
 # Example usage
 if __name__ == "__main__":
-    # opA = 10.0
-    # print(f"float16 of {opA} = 0x{float_to_f16_bits(opA):04X}")
-    # opB = 5.0
-    # print(f"float16 of {opB} = 0x{float_to_f16_bits(opB):04X}")
-    # quotient_f16 = f16_div_softfloat(float_to_f16_bits(opA), float_to_f16_bits(opB))
-    # print(f"float16 of {opA} / {opB} = 0x{quotient_f16:04X} ({float16_bits_to_float(quotient_f16)})")
+    # Input as string literals (hex float16 bit patterns or decimal strings)
+    valA_str = '0x6E01'
+    valB_str = '0x35EC'
 
-    # sign = False
-    # exp = 15
-    # sig = 0x7e88
-    # result = softfloat_roundPackToF16(sign, exp, sig)
-    # print(f"Packed result: 0x{result:04X} ({float16_bits_to_float(result)})")
-
-    # lib.printRoundingModeInfo()
-
-    op1 = 'inf'            # 0x7C00
-    op2 = 1.0              # 0x3C00
-
-
-    # Input as Python float literals
-    valA = op1
-    valB = op2
-
-    # Convert to float16 bit patterns using NumPy
-    opA = parse_float16_input(valA)
-    opB = parse_float16_input(valB)
+    # Convert to float16 bit patterns (uint16)
+    opA = parse_float16_input(valA_str)
+    opB = parse_float16_input(valB_str)
 
     print('; ----- DEBUG OUTPUT -----')
 
-    # Perform the division using your SoftFloat-emulated f16_div
+    # Perform the addition using SoftFloat
     result = f16_add_softfloat(opA, opB)
 
-    # Convert result back to Python float using NumPy
-    valR = float(np.array([result], dtype=np.uint16).view(np.float16)[0])
+    # Convert result to Python float
+    valA_float = float16_bits_to_float(opA)
+    valB_float = float16_bits_to_float(opB)
+    valR_float = float16_bits_to_float(result)
+
+    # Debug output: decimal first, then hex
+    print(f';    {valA_float} + {valB_float} = {valR_float}')
     print(f';    0x{opA:04X} + 0x{opB:04X} = 0x{result:04X}')
 
-
-    # Output
-    print(f'\r\n; ----- ASSEMBLY OUTPUT -----')
+    # Assembly output: decimal first, then hex
+    print(f'\n; ----- ASSEMBLY OUTPUT -----')
     print(f'    call printInline')
-    print(f'    asciz "{valA} + {valB} = {valR}\\r\\n"')
+    print(f'    asciz "{valA_float} + {valB_float} = {valR_float}\\r\\n"')
     print(f'    call printInline')
     print(f'    asciz "0x{opA:04X} + 0x{opB:04X} = 0x{result:04X}\\r\\n"')
-    print(f'    ld hl,0x{opA:04X} ; {valA}')
-    print(f'    ld de,0x{opB:04X} ; {valB}')
+    print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
+    print(f'    ld de,0x{opB:04X} ; 0x{opB:04X}')
     print(f'    call f16_add')
     print(f'    PRINT_HL_HEX " assembly result"')
     print(f'    call printNewLine')
+

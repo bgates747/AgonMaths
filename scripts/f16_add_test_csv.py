@@ -58,7 +58,7 @@ def f16_to_f32_softfloat(a_f16):
 # ----------------------------
 # Main Combined Processing
 # ----------------------------
-def process_fp16_testfile(infile, detail_outfile, summary_outfile, errors_only=False):
+def process_fp16_testfile(infile, detail_outfile, summary_outfile, errors_only=True):
     record_size = 8
     results_by_category = defaultdict(lambda: {'correct': 0, 'incorrect': 0})
 

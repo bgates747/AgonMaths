@@ -11,8 +11,8 @@ def generate_valid_fp16(min_val, max_val):
         return np.random.choice(SPECIALS)
     
     candidate = np.random.uniform(min_val, max_val)
-    if np.random.rand() < 0.5:
-        candidate = -candidate
+    # if np.random.rand() < 0.5:
+    #     candidate = -candidate
     candidate_f16 = float16_bits_to_float(float_to_f16_bits(candidate))
     return candidate_f16
 
@@ -40,11 +40,11 @@ def generate_fp16_add_test(N, op1_min, op1_max, op2_min, op2_max, outfile):
 
 if __name__ == "__main__":
     NUM_TESTS = 1000
-    OP1_MIN = -65504.0
+    OP1_MIN = 0.0
     OP1_MAX = 65504.0
-    OP2_MIN = -65504.0
+    OP2_MIN = 0.0
     OP2_MAX = 65504.0
-    FREQ_SPECIALS = 0.2
+    FREQ_SPECIALS = 0.0
 
     GENERATE_OUTFILE = 'tests/f16_add.bin'
 

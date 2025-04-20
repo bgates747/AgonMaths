@@ -83,16 +83,9 @@ packToF16UI:
     add a,a
     add a,a
     add a,h
-    ld h,a
 ; sign
-    ld a,c
-    or h
+    add a,c
     ld h,a
-; extract exponent
-    rra
-    rra
-    and %00011111
-    ld b,a
     ret
 ; end packToF16UI
 

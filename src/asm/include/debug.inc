@@ -70,8 +70,6 @@ printHexHLBC:
 printHexHLDE:
     push af
     call printHex16
-    ld a,' '
-    rst.lil 10h
     ex de,hl
     call printHex16
     ld a,' '
