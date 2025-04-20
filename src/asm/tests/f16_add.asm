@@ -48,6 +48,15 @@ exit:
     include "../softfloat/s_shiftRightJam32.inc"
 
 main:
+    ; ld hl,0x1f00
+    ; PRINT_UNPACK_F16 " unpacked F16"
+    ; ret
+
+    ; ld hl,0x7C00 ; 0x7C00
+    ; fracF16UI
+    ; PRINT_HL_HEX " fracF16UI"
+    ; ret
+
     ; ld hl,0x0601
     ; ld bc,0x1b00
     ; call packToF16UI
@@ -81,15 +90,14 @@ main:
 ;     ret
 
     ; call printInline
-    ; asciz "0.01558685302734375 + 4.124641418457031e-05 = 0.015625\r\n"
+    ; asciz "49568.0 + inf = inf\r\n"
     ; call printInline
-    ; asciz "0x23FB + 0x02B4 = 0x2400\r\n"
-    ; ld hl,0x23FB ; 0x23FB
-    ; ld de,0x02B4 ; 0x02B4
+    ; asciz "0x7A0D + 0x7C00 = 0x7C00\r\n"
+    ; ld hl,0x7A0D ; 0x7A0D
+    ; ld de,0x7C00 ; 0x7C00
     ; call f16_add
     ; PRINT_HL_HEX " assembly result"
     ; call printNewLine
-
     ; ret
 
     call vdu_cls

@@ -114,10 +114,10 @@ softfloat_addMagsF16:
                 jp nz,@propagateNaN
 ;             uiZ = packToF16UI( signZ, 0x1F, 0 );
 ;             goto uiZ;
+                ld hl,0x7C00 ; +inf
                 ld a,(ix+signA)
-                or 0x1F
+                or h
                 ld h,a
-                ld l,0
                 ret
 ;         }
 @expB_not_infB:
@@ -160,10 +160,16 @@ softfloat_addMagsF16:
 ;         uiZ = uiA;
 ;         if ( expA == 0x1F ) {
             ld a,(ix+expA)
+
+            ; PRINT_A_HEX "expA: if ( expA == 0x1F )" ; DEBUG
+
             cp 0x1F ; check expA for inf
-            jp nz,@expA_not_inf
+            JR nz,@expA_not_inf
 ;             if ( sigA ) goto propagateNaN;
                 ld hl,(ix+sigA)
+
+                ; PRINT_HL_HEX "sigA: if ( sigA ) goto propagateNaN" ; DEBUG
+
                 SIGN_HL ; test sigA for zero
                 jp nz,@propagateNaN
 ;             goto uiZ;

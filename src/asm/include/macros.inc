@@ -180,19 +180,24 @@
     ENDMACRO
 
     MACRO PRINT_UNPACK_F16 msg
+        ld a,'S'
+        rst.lil 0x10
+        signF16UI
+        call printHexA
+        ld a,'E'
+        rst.lil 0x10
+        expF16UI
+        call printHexA
         push hl
         call printInline
-        asciz "\r\n",msg,"\r\n"
+        asciz "Sig"
         pop hl
-        call printUnpackF16
-    ENDMACRO
-
-    MACRO PRINT_PACK_F16 msg
         push hl
+        fracF16UI
+        call printHexHL
         call printInline
-        asciz "\r\n",msg,"\r\n"
+        asciz msg,"\r\n"
         pop hl
-        call printPackF16
     ENDMACRO
 
     MACRO PRINT_HL_HEX_BIN msg

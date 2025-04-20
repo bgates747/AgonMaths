@@ -4,17 +4,29 @@ import numpy as np
 import os
 from SoftFloat import (float_to_f16_bits, float16_bits_to_float, f16_add_python)
 
-SPECIALS = [-np.nan, np.inf, -np.inf, 0.0, -0.0]
+# SPECIALS = [-np.nan, np.inf, -np.inf, 0.0, -0.0]
+SPECIALS = [-np.nan, np.inf, 0.0, 'subnormal']
 
 def generate_valid_fp16(min_val, max_val):
     if np.random.rand() < FREQ_SPECIALS:
-        return np.random.choice(SPECIALS)
-    
+        choice = np.random.choice(SPECIALS)
+        if choice == 'subnormal':
+            # Smallest positive subnormal in float16 is 0x0001
+            # Largest subnormal before normal starts is 0x03FF
+            bits = np.random.randint(0x0001, 0x0400)
+            return float16_bits_to_float(bits)
+        elif choice == '-subnormal':
+            # Same magnitude range as positive subnormal, but with sign bit set
+            bits = np.random.randint(0x0001, 0x0400)
+            return float16_bits_to_float(0x8000 | bits)
+        return choice
+
     candidate = np.random.uniform(min_val, max_val)
     # if np.random.rand() < 0.5:
     #     candidate = -candidate
     candidate_f16 = float16_bits_to_float(float_to_f16_bits(candidate))
     return candidate_f16
+
 
 def generate_fp16_add_test(N, op1_min, op1_max, op2_min, op2_max, outfile):
     data = bytearray()
@@ -39,12 +51,12 @@ def generate_fp16_add_test(N, op1_min, op1_max, op2_min, op2_max, outfile):
     print(f"Wrote {N} test cases ({len(data)} bytes) to {outfile}")
 
 if __name__ == "__main__":
-    NUM_TESTS = 1000
+    NUM_TESTS = 1000000
     OP1_MIN = 0.0
-    OP1_MAX = 0.01
+    OP1_MAX = 65504.0
     OP2_MIN = 0.0
-    OP2_MAX = 0.01
-    FREQ_SPECIALS = 0.0
+    OP2_MAX = 65504.0
+    FREQ_SPECIALS = 0.2
 
     GENERATE_OUTFILE = 'tests/f16_add.bin'
 

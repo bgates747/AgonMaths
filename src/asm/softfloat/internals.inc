@@ -17,7 +17,7 @@
 ; #define fracF16UI( a ) ((a) & 0x03FF)
     MACRO fracF16UI
         ld a,h
-        and %00000111
+        and %00000011
         ld h,a
     ENDMACRO
 
