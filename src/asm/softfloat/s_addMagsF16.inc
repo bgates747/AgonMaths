@@ -9,6 +9,7 @@ softfloat_addMagsF16:
     expF16UI
     signF16UI
     ld (ix+signA),bc ; implicitly stores expA
+    ld (ix+signZ),c ; signZ will be the same as signA or signB in this function
 ; sigA = fracF16UI( uiA );
     fracF16UI
     ld (ix+sigA),hl ; store sigA

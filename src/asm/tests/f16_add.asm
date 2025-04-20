@@ -90,11 +90,11 @@ main:
 ;     ret
 
     ; call printInline
-    ; asciz "49568.0 + inf = inf\r\n"
+    ; asciz "-41632.0 + -18288.0 = -59904.0\r\n"
     ; call printInline
-    ; asciz "0x7A0D + 0x7C00 = 0x7C00\r\n"
-    ; ld hl,0x7A0D ; 0x7A0D
-    ; ld de,0x7C00 ; 0x7C00
+    ; asciz "0xF915 + 0xF477 = 0xFB50\r\n"
+    ; ld hl,0xF915 ; 0xF915
+    ; ld de,0xF477 ; 0xF477
     ; call f16_add
     ; PRINT_HL_HEX " assembly result"
     ; call printNewLine

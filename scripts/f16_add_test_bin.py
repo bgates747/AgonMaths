@@ -5,7 +5,8 @@ import os
 from SoftFloat import (float_to_f16_bits, float16_bits_to_float, f16_add_python)
 
 # SPECIALS = [-np.nan, np.inf, -np.inf, 0.0, -0.0]
-SPECIALS = [-np.nan, np.inf, 0.0, 'subnormal']
+# SPECIALS = [-np.nan, np.inf, 0.0, 'subnormal']
+SPECIALS = [-np.nan, -np.inf, -0.0, '-subnormal']
 
 def generate_valid_fp16(min_val, max_val):
     if np.random.rand() < FREQ_SPECIALS:
@@ -51,12 +52,21 @@ def generate_fp16_add_test(N, op1_min, op1_max, op2_min, op2_max, outfile):
     print(f"Wrote {N} test cases ({len(data)} bytes) to {outfile}")
 
 if __name__ == "__main__":
+# PASSES
+    # NUM_TESTS = 1000000
+    # OP1_MIN = 0.0
+    # OP1_MAX = 65504.0
+    # OP2_MIN = 0.0
+    # OP2_MAX = 65504.0
+    # FREQ_SPECIALS = 0.2
+
     NUM_TESTS = 1000000
-    OP1_MIN = 0.0
-    OP1_MAX = 65504.0
-    OP2_MIN = 0.0
-    OP2_MAX = 65504.0
+    OP1_MIN = -65504.0
+    OP1_MAX = -0.0
+    OP2_MIN = -65504.0
+    OP2_MAX = -0.0
     FREQ_SPECIALS = 0.2
+
 
     GENERATE_OUTFILE = 'tests/f16_add.bin'
 
