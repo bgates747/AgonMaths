@@ -40,6 +40,7 @@ exit:
 ; APPLICATION INCLUDES
     include "../softfloat/globals.inc"
     include "../softfloat/internals.inc"
+    include "../softfloat/f16_add.inc"
     include "../softfloat/f16_sub.inc"
     include "../softfloat/s_addMagsF16.inc"
     include "../softfloat/s_subMagsF16.inc"
