@@ -132,15 +132,15 @@ main:
 ;     ret
 
     ; call printInline
-    ; asciz "-41632.0 + -18288.0 = -59904.0\r\n"
+    ; asciz "35584.0 + -55072.0 = -19488.0\r\n"
     ; call printInline
-    ; asciz "0xF915 + 0xF477 = 0xFB50\r\n"
-    ; ld hl,0xF915 ; 0xF915
-    ; ld de,0xF477 ; 0xF477
+    ; asciz "0x7858 + 0xFAB9 = 0xF4C2\r\n"
+    ; ld hl,0x7858 ; 0x7858
+    ; ld de,0xFAB9 ; 0xFAB9
     ; call f16_add
     ; PRINT_HL_HEX " assembly result"
     ; call printNewLine
-    ; ret
+    ; RET
 
     call vdu_cls
     call printInline

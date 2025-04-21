@@ -85,7 +85,7 @@ struct commonNaN {
 /*----------------------------------------------------------------------------
 | The bit pattern for a default generated 16-bit floating-point NaN.
 *----------------------------------------------------------------------------*/
-#define defaultNaNF16UI 0xFE00
+#define defaultNaNF16UI 0x7E00
 
 // /*----------------------------------------------------------------------------
 // | Returns true when 16-bit unsigned integer 'uiA' has the bit pattern of a
@@ -95,11 +95,9 @@ struct commonNaN {
 // #define softfloat_isSigNaNF16UI( uiA ) ((((uiA) & 0x7E00) == 0x7C00) && ((uiA) & 0x01FF))
 
 /*----------------------------------------------------------------------------
-| Returns true when the 16-bit unsigned integer uiA has the bit pattern of a
-| 16-bit floating-point signaling NaN.
-| Note: This macro evaluates its argument more than once.
+| Always returns false since we don't support signaling NaN in 16-bit format.
 *----------------------------------------------------------------------------*/
-#define softfloat_isSigNaNF16UI(uiA) ( (((uiA) & 0x7E00) == 0x7C00) && ((uiA) & 0x01FF) )
+#define softfloat_isSigNaNF16UI(uiA) 0
 
 /*----------------------------------------------------------------------------
 | Assuming 'uiA' has the bit pattern of a 16-bit floating-point NaN, converts

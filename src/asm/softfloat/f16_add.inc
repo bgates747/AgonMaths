@@ -12,7 +12,7 @@ f16_add:
     and %10000000
 ; if ( signF16UI( uiA ^ uiB ) ) {
 ;     return softfloat_subMagsF16( uiA, uiB );
-        call nz,softfloat_subMagsF16
+        jp nz,softfloat_subMagsF16
 ; } else {
 ;     return softfloat_addMagsF16( uiA, uiB );
         jp softfloat_addMagsF16

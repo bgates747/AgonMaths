@@ -25,8 +25,8 @@ def generate_valid_fp16(min_val, max_val):
         return choice
 
     candidate = np.random.uniform(min_val, max_val)
-    # if np.random.rand() < 0.5:
-    #     candidate = -candidate
+    if np.random.rand() < 0.5:
+        candidate = -candidate
     candidate_f16 = float16_bits_to_float(float_to_f16_bits(candidate))
     return candidate_f16
 
@@ -79,10 +79,10 @@ def generate_fp16_opposite_signed_pair():
 def generate_fp16_add_test(N, op1_min, op1_max, op2_min, op2_max, outfile):
     data = bytearray()
     for i in range(N):
-        # op1 = generate_valid_fp16(op1_min, op1_max)
-        # op2 = generate_valid_fp16(op2_min, op2_max)
+        op1 = generate_valid_fp16(op1_min, op1_max)
+        op2 = generate_valid_fp16(op2_min, op2_max)
 
-        op1, op2 = generate_fp16_opposite_signed_pair()
+        # op1, op2 = generate_fp16_opposite_signed_pair()
 
         result = f16_add_python(op1, op2)
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     # OP2_MAX = -0.0
     # FREQ_SPECIALS = 0.2
 
-    NUM_TESTS = 1000
+    NUM_TESTS = 1000000
     OP1_MIN = 0.0
     OP1_MAX = 65504.0
     OP2_MIN = 65504.0
