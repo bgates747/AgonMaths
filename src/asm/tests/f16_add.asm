@@ -48,6 +48,48 @@ exit:
     include "../softfloat/s_shiftRightJam32.inc"
 
 main:
+;     ld hl,0xffff
+;     ld (ix+sigX),hl
+;     ld hl,0xffff
+;     ld (ix+sigY),hl
+;     ld a,13
+;     ld (ix+expDiff),a ; expDiff = 8
+
+; @calc_sig32Z:
+; ;     sig32Z = ((uint_fast32_t) sigX<<expDiff) - sigY;
+;         ld b,(ix+expDiff)
+;         xor a ; clear a
+;         ld hl,(ix+sigX)
+; @sigX_shift:
+;         add hl,hl
+;         adc a,a
+;         djnz @sigX_shift
+
+;         ld (ix+sigX),hl ; store low 3 bytes of sigX
+;         ld e,(ix+sigX+2) ; e = upper middle byte of sigX
+;         ld d,a ; dehl is now sigX
+;         ld bc,(ix+sigY)
+
+;     ;   dehl
+;     ; - 00bc
+;     ; = hlbc 
+;         or a ; clear carry
+;         sbc.s hl,bc ; .s to force 16-bit subtraction
+;         ld c,l
+;         ld b,h
+
+;         ex de,hl
+;         ld de,0
+
+;         sbc.s hl,de ; hlbc = sigX<<expDiff - sigY
+
+;         push bc
+;         pop de
+
+;         PRINT_HLDE_HEX " sigX<<expDiff - sigY"
+;         ret
+
+
     ; ld hl,0x1f00
     ; PRINT_UNPACK_F16 " unpacked F16"
     ; ret

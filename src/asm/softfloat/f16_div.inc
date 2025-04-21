@@ -218,7 +218,7 @@ f16_div:
     jp softfloat_roundPackToF16 ; assumes hl holds sig
 @return_invalid: ; fow now, we don't distinguish between signalling and non-signalling NaN
 @return_nan:
-    ld hl,0xFE00 ; canonical NaN
+    ld hl,canonicalNaNF16
     ret
 @return_inf:
     ld l,0

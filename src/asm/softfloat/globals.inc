@@ -1,3 +1,5 @@
+canonicalNaNF16: EQU 0x7E00
+
 ; 16-bit floating point globals
     ; A group
     uiA:         EQU 0
@@ -30,9 +32,10 @@
     ; Shared / Misc
     expDiff:     EQU expZ + 2
     shiftDist:   EQU expDiff + 1
+    sigDiff:     EQU shiftDist + 1
 
 ; 32-bit floating point globals
-    sig32A:      EQU shiftDist + 1
+    sig32A:      EQU sigDiff + 3
     sig32B:      EQU sig32A + 5
     sig32Z:      EQU sig32B + 5
 
@@ -72,6 +75,7 @@
 
     _expDiff:      db 0
     _shiftDist:    db 0
+    _sigDiff:      dl 0
 
     _sig32A:       blkb 5,0
     _sig32B:       blkb 5,0

@@ -32,7 +32,7 @@ softfloat_addMagsF16:
     ld (ix+expDiff),a ; store expDiff
     ; PRINT_A_HEX "expDiff" ; DEBUG
 ; if ( ! expDiff ) {
-        jp nz,@expDiff_not_zero
+    jp nz,@expDiff_not_zero
 ;     if ( ! expA ) {
         ld a,(ix+expA)
         or a ; check expA for zero
@@ -268,6 +268,7 @@ softfloat_addMagsF16:
         jr z,@F
 ;         sigZ |= 1;
             set 0,l ; set the LSB of sigZ
+            jp softfloat_roundPackToF16
 ;     } else {
 @@:
 ;         if ( ! (sigZ & 0xF) && (expZ < 0x1E) ) {
@@ -299,7 +300,7 @@ softfloat_addMagsF16:
 @propagateNaN:
 ; uiZ = softfloat_propagateNaNF16UI( uiA, uiB );
 ; goto uiZ;
-    ld hl,0xFE00 ; NaN
+    ld hl,canonicalNaNF16
     ret
 @addEpsilon: ; since rounding mode is round to even, there's nothing to do here
 ; softfloat_exceptionFlags |= softfloat_flag_inexact;

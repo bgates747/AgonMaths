@@ -140,7 +140,7 @@ f16_mul:
     ld h,a
     ret
 @ret_nan:
-    ld hl,0xFE00      ; canonical NaN
+    ld hl,canonicalNaNF16
     ret
 ; }
 
