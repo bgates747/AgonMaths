@@ -219,7 +219,7 @@ def parse_float16_input(x):
 # Example usage
 if __name__ == "__main__":
     # Input as string literal (hex float16 bit pattern or decimal string)
-    valA_str = '0x7858'
+    valA_str = 6561.0
 
     # Convert to float16 bit pattern (uint16)
     opA = parse_float16_input(valA_str)

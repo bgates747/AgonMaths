@@ -46,15 +46,33 @@ exit:
     include "../softfloat/s_shiftRightJam32.inc"
 
 main:
-    ; call printInline
-    ; asciz "sqrt(35584.0) = 188.625\r\n"
-    ; call printInline
-    ; asciz "sqrt(0x7858) = 0x59E5\r\n"
-    ; ld hl,0x7858 ; 0x7858
-    ; call f16_sqrt
-    ; PRINT_HL_HEX " assembly result"
-    ; call printNewLine
-    ; ret
+    ld hl,0x6E68 ; sqrt(6561.0) = 81.0
+    signF16UI
+    expF16UI
+    PRINT_BC_HEX "b = expA, c = signA" ; DEBUG
+    fracF16UI
+    PRINT_HL_HEX "hl = sigA" ; DEBUG
+
+; expZ = ((expA - 0xF)>>1) + 0xE;
+    ld a,b
+    sub 0xF ; expA - 0xF
+    srl a ; expA - 0xF >> 1
+    add a,0xE ; expZ = ((expA - 0xF)>>1) + 0xE
+; expA &= 1;
+    and 1 ; expA &= 1
+    ld b,a ; c = expA
+; sigA |= 0x0400;
+    set 2,h ; set implicit 1
+; index = (sigA>>6 & 0xE) + expA;
+    ld e,l
+    ld d,h ; de = sigA
+    add hl,hl ; sigA <<= 1
+    add hl,hl ; sigA <<= 1
+    ld a,0xE
+    and h
+    add a,b ; a = index
+    PRINT_A_HEX "index = (sigA>>6 & 0xE) + expA;" ; DEBUG
+    ret
 
     call vdu_cls
     call printInline
@@ -74,7 +92,6 @@ main:
     ld l,(iy+0) ; op1 low byte
     ld h,(iy+1) ; op1 high byte
     call f16_sqrt
-    ld hl,0x8000 ; -0 ; DEBUG
 ; write results to file buffer
     ld (iy+4),l ; assembly sqrt low byte
     ld (iy+5),h ; assembly sqrt high byte
