@@ -26,7 +26,7 @@ def classify_operand(f16_bits):
         if f == 0:
             return 'Inf' if s == 0 else '-Inf'
         else:
-            return 'NaN' if s == 0 else '-NaN'
+            return 'NaN'
     elif e == 0:
         if f == 0:
             return 'Zero' if s == 0 else '-Zero'

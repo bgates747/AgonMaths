@@ -1,0 +1,7 @@
+op_category,python_category,asm_category,correct,incorrect
+-Normal,NaN,-Zero,0,436
+Inf,Inf,-Zero,0,57
+NaN,NaN,-Zero,0,51
+Normal,Normal,-Zero,0,350
+Subnormal,Normal,-Zero,0,53
+Zero,Zero,-Zero,0,53

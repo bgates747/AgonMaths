@@ -28,23 +28,35 @@ ffi = FFI()
 ffi.cdef("""
     typedef uint16_t float16_t;
     typedef uint32_t float32_t;
+
     // Convert a 32-bit float (given as its bit pattern) to float16.
     float16_t f32_to_f16(float32_t a);
+
     // Add two float16 values.
     float16_t f16_add(float16_t a, float16_t b);
+
     // Subtract two float16 values.
     float16_t f16_sub(float16_t a, float16_t b);
+
     // Multiply two float16 values.
     float16_t f16_mul(float16_t a, float16_t b);
+
     // Divide two float16 values.
     float16_t f16_div(float16_t a, float16_t b);
+
+    // Square root of a float16 value.
+    float16_t f16_sqrt(float16_t a);
+
     // Convert a float16 value to a float32 value.
     float32_t f16_to_f32(float16_t a);
+
     // Pack sign, exponent and sig to a float16.
-    float16_t softfloat_roundPackToF16( bool sign, int_fast16_t exp, uint_fast16_t sig );
+    float16_t softfloat_roundPackToF16(bool sign, int_fast16_t exp, uint_fast16_t sig);
+
     // DEBUG: print the rounding mode
     void printRoundingModeInfo();
 """)
+
 lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../SoftFloat-3e/build/Linux-x86_64-GCC/softfloat.so"))
 lib = ffi.dlopen(lib_path)
 
@@ -121,6 +133,23 @@ def f16_mul_python(a, b):
     res_bits = lib.f16_mul(a_bits, b_bits)
     return float16_bits_to_float(res_bits)
 
+def f16_sqrt_softfloat(a_f16):
+    """
+    Computes the square root of a half-precision number (provided as a 16-bit integer)
+    using SoftFloat's f16_sqrt.
+    Returns the 16-bit integer result.
+    """
+    return lib.f16_sqrt(a_f16)
+
+def f16_sqrt_python(a):
+    """
+    Convenience function: compute the square root of a Python float interpreted as float16,
+    using SoftFloat's f16_sqrt, and return a Python float result.
+    """
+    a_bits = np.float16(a).view(np.uint16)
+    res_bits = lib.f16_sqrt(a_bits)
+    return float16_bits_to_float(res_bits)
+
 def f16_sub_softfloat(a_f16, b_f16):
     """
     Subtracts two half-precision numbers (provided as 16-bit integers)
@@ -189,39 +218,71 @@ def parse_float16_input(x):
 
 # Example usage
 if __name__ == "__main__":
-    # Input as string literals (hex float16 bit patterns or decimal strings)
+    # Input as string literal (hex float16 bit pattern or decimal string)
     valA_str = '0x7858'
-    valB_str = '0xFAB9'
 
-    # Convert to float16 bit patterns (uint16)
+    # Convert to float16 bit pattern (uint16)
     opA = parse_float16_input(valA_str)
-    opB = parse_float16_input(valB_str)
 
     print('; ----- DEBUG OUTPUT -----')
 
-    # Perform the subition using SoftFloat
-    result = f16_sub_softfloat(opA, opB)
+    # Perform the square root using SoftFloat
+    result = f16_sqrt_softfloat(opA)
 
-    # Convert result to Python float
+    # Convert to Python float
     valA_float = float16_bits_to_float(opA)
-    valB_float = float16_bits_to_float(opB)
     valR_float = float16_bits_to_float(result)
 
     # Debug output: decimal first, then hex
-    print(f';    {valA_float} - {valB_float} = {valR_float}')
-    print(f';    0x{opA:04X} - 0x{opB:04X} = 0x{result:04X}')
+    print(f';    sqrt({valA_float}) = {valR_float}')
+    print(f';    sqrt(0x{opA:04X}) = 0x{result:04X}')
 
     # Assembly output: decimal first, then hex
     print(f'\n; ----- ASSEMBLY OUTPUT -----')
     print(f'    call printInline')
-    print(f'    asciz "{valA_float} - {valB_float} = {valR_float}\\r\\n"')
+    print(f'    asciz "sqrt({valA_float}) = {valR_float}\\r\\n"')
     print(f'    call printInline')
-    print(f'    asciz "0x{opA:04X} - 0x{opB:04X} = 0x{result:04X}\\r\\n"')
+    print(f'    asciz "sqrt(0x{opA:04X}) = 0x{result:04X}\\r\\n"')
     print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
-    print(f'    ld de,0x{opB:04X} ; 0x{opB:04X}')
-    print(f'    call f16_sub')
+    print(f'    call f16_sqrt')
     print(f'    PRINT_HL_HEX " assembly result"')
     print(f'    call printNewLine')
+
+
+
+    # # Input as string literals (hex float16 bit patterns or decimal strings)
+    # valA_str = '0x7858'
+    # valB_str = '0xFAB9'
+
+    # # Convert to float16 bit patterns (uint16)
+    # opA = parse_float16_input(valA_str)
+    # opB = parse_float16_input(valB_str)
+
+    # print('; ----- DEBUG OUTPUT -----')
+
+    # # Perform the subition using SoftFloat
+    # result = f16_sub_softfloat(opA, opB)
+
+    # # Convert result to Python float
+    # valA_float = float16_bits_to_float(opA)
+    # valB_float = float16_bits_to_float(opB)
+    # valR_float = float16_bits_to_float(result)
+
+    # # Debug output: decimal first, then hex
+    # print(f';    {valA_float} - {valB_float} = {valR_float}')
+    # print(f';    0x{opA:04X} - 0x{opB:04X} = 0x{result:04X}')
+
+    # # Assembly output: decimal first, then hex
+    # print(f'\n; ----- ASSEMBLY OUTPUT -----')
+    # print(f'    call printInline')
+    # print(f'    asciz "{valA_float} - {valB_float} = {valR_float}\\r\\n"')
+    # print(f'    call printInline')
+    # print(f'    asciz "0x{opA:04X} - 0x{opB:04X} = 0x{result:04X}\\r\\n"')
+    # print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
+    # print(f'    ld de,0x{opB:04X} ; 0x{opB:04X}')
+    # print(f'    call f16_sub')
+    # print(f'    PRINT_HL_HEX " assembly result"')
+    # print(f'    call printNewLine')
 
     # # Compute the worst-case sig32Z = (sigX << expDiff) - sigY
     # sigX = 0xffff  # maximum possible value for normalized significand + hidden bit
