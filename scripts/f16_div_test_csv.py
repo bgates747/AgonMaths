@@ -76,7 +76,7 @@ from collections import defaultdict
 import struct
 import csv
 
-def process_fp16_testfile(infile, detail_outfile, summary_outfile, errors_only=False):
+def process_fp16_testfile(infile, detail_outfile, summary_outfile, errors_only=True):
     """
     Reads the binary test file (8-byte records) containing:
        op1 (16 bits), op2 (16 bits), python_result (16 bits), asm_result (16 bits)
