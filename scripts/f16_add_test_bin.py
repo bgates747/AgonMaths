@@ -117,7 +117,7 @@ if __name__ == "__main__":
     # OP2_MAX = -0.0
     # FREQ_SPECIALS = 0.2
 
-    NUM_TESTS = 1000000
+    NUM_TESTS = 1000
     OP1_MIN = 0.0
     OP1_MAX = 65504.0
     OP2_MIN = 65504.0

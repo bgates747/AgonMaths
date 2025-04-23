@@ -43,7 +43,7 @@ if __name__ == "__main__":
     OP1_MIN = 0.0
     OP1_MAX = 65504.0
     OP2_MIN = 0.0
-    OP2_MAX = 1.0
+    OP2_MAX = 65504.0
     FREQ_SPECIALS = 0.2
 
     GENERATE_OUTFILE = 'tests/f16_div.bin'
