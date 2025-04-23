@@ -351,6 +351,24 @@
         pop de
     ENDMACRO
 
+    MACRO PRINT_ADE_HEX msg
+        push de
+        push af
+        push hl
+        push af
+        ld a,'0'
+        rst.lil 0x10
+        ld a,'x'
+        rst.lil 0x10
+        pop af
+        call printHexADE
+        call printInline
+        asciz msg,"\r\n"
+        pop hl
+        pop af
+        pop de
+    ENDMACRO
+
     MACRO DUMP_REGISTERS_HEX msg
         push de
         push af

@@ -41,6 +41,7 @@ exit:
     include "../softfloat/f16_mul.inc"
     include "../softfloat/f16_div.inc"
     include "../softfloat/internals.inc"
+    include "../softfloat/globals.inc"
     include "../softfloat/s_normSubnormalF16Sig.inc"
     include "../softfloat/s_roundPackToF16.inc"
     include "../softfloat/s_shiftRightJam32.inc"
