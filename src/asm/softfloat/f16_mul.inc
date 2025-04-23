@@ -93,7 +93,7 @@ f16_mul:
     add hl,hl
     ex de,hl
 ; sig32Z = (uint_fast32_t) sigA * sigB;
-    call mul_16_32
+    call mul_16x16_32
     ex de,hl
     ex de,hl
 ; sigZ = sig32Z>>16; (we get this for free since HL contains the relevant bits)
@@ -143,37 +143,3 @@ f16_mul:
     ld hl,canonicalNaNF16
     ret
 ; }
-
-
-;Inputs: hl,de = operands
-;Outputs: hlde = 32-bit product
-;Destroys: af,bc
-;53 cycles
-;32 bytes
-mul_16_32:
-    ld b,e
-    ld c,l
-    ld l,e
-    ld e,c
-    mlt bc
-    ld a,b
-    ld b,h
-    mlt hl
-    ; Add high part of low product, cannot overflow 16 bits
-    add a,l
-    ld l,a
-    adc a,h
-    sub a,l
-    ld h,a
-    ld a,c
-    ld c,d
-    mlt de
-    add.s hl,de ; .s to force 16-bit addition
-    ld e,a
-    ld d,l
-    ld l,h
-    ld h,0
-    rl h
-    mlt bc
-    add hl,bc ; Cannot overflow 16 bits
-    ret

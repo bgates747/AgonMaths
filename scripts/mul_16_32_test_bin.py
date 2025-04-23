@@ -19,7 +19,7 @@ def generate_test_cases(output_file, num_cases, hl_min, hl_max, de_min, de_max):
     print(f"File size: {os.path.getsize(output_file)} bytes")
 
 if __name__ == "__main__":
-    output_file = 'tests/mul_16_32.bin'
+    output_file = 'tests/mul_16x16_32.bin'
     num_cases = 1000
     
     hl_min = 0

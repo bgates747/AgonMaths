@@ -34,9 +34,10 @@ canonicalNaNF16: EQU 0x7E00
     shiftDist:   EQU expDiff + 1
     sigDiff:     EQU shiftDist + 1
     r0:          EQU sigDiff + 3
+    rem:         EQU r0 + 3
 
 ; 32-bit floating point globals
-    sig32A:      EQU r0 + 3
+    sig32A:      EQU rem + 5
     sig32B:      EQU sig32A + 5
     sig32Z:      EQU sig32B + 5
     sig48Z:      EQU sig32Z + 5
@@ -79,6 +80,7 @@ canonicalNaNF16: EQU 0x7E00
     _shiftDist:    db 0
     _sigDiff:      dl 0
     _r0:           dl 0
+    _rem:          blkb 5,0
 
     _sig32A:       blkb 5,0
     _sig32B:       blkb 5,0

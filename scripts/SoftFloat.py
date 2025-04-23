@@ -218,81 +218,68 @@ def parse_float16_input(x):
 
 # Example usage
 if __name__ == "__main__":
-    # Input as string literal (hex float16 bit pattern or decimal string)
-    valA_str = "0xFC00"
+    # # Input as string literal (hex float16 bit pattern or decimal string)
+    # valA_str = "0xFC00"
 
-    # Convert to float16 bit pattern (uint16)
-    opA = parse_float16_input(valA_str)
-
-    print('; ----- DEBUG OUTPUT -----')
-
-    # Perform the square root using SoftFloat
-    result = f16_sqrt_softfloat(opA)
-
-    # Convert to Python float
-    valA_float = float16_bits_to_float(opA)
-    valR_float = float16_bits_to_float(result)
-
-    # Debug output: decimal first, then hex
-    print(f';    sqrt({valA_float}) = {valR_float}')
-    print(f';    sqrt(0x{opA:04X}) = 0x{result:04X}')
-
-    # Assembly output: decimal first, then hex
-    print(f'\n; ----- ASSEMBLY OUTPUT -----')
-    print(f'    call printInline')
-    print(f'    asciz "sqrt({valA_float}) = {valR_float}\\r\\n"')
-    print(f'    call printInline')
-    print(f'    asciz "sqrt(0x{opA:04X}) = 0x{result:04X}\\r\\n"')
-    print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
-    print(f'    call f16_sqrt')
-    print(f'    PRINT_HL_HEX " assembly result"')
-    print(f'    call printNewLine')
-
-
-
-    # # Input as string literals (hex float16 bit patterns or decimal strings)
-    # valA_str = '0x7858'
-    # valB_str = '0xFAB9'
-
-    # # Convert to float16 bit patterns (uint16)
+    # # Convert to float16 bit pattern (uint16)
     # opA = parse_float16_input(valA_str)
-    # opB = parse_float16_input(valB_str)
 
     # print('; ----- DEBUG OUTPUT -----')
 
-    # # Perform the subition using SoftFloat
-    # result = f16_sub_softfloat(opA, opB)
+    # # Perform the square root using SoftFloat
+    # result = f16_sqrt_softfloat(opA)
 
-    # # Convert result to Python float
+    # # Convert to Python float
     # valA_float = float16_bits_to_float(opA)
-    # valB_float = float16_bits_to_float(opB)
     # valR_float = float16_bits_to_float(result)
 
     # # Debug output: decimal first, then hex
-    # print(f';    {valA_float} - {valB_float} = {valR_float}')
-    # print(f';    0x{opA:04X} - 0x{opB:04X} = 0x{result:04X}')
+    # print(f';    sqrt({valA_float}) = {valR_float}')
+    # print(f';    sqrt(0x{opA:04X}) = 0x{result:04X}')
 
     # # Assembly output: decimal first, then hex
     # print(f'\n; ----- ASSEMBLY OUTPUT -----')
     # print(f'    call printInline')
-    # print(f'    asciz "{valA_float} - {valB_float} = {valR_float}\\r\\n"')
+    # print(f'    asciz "sqrt({valA_float}) = {valR_float}\\r\\n"')
     # print(f'    call printInline')
-    # print(f'    asciz "0x{opA:04X} - 0x{opB:04X} = 0x{result:04X}\\r\\n"')
+    # print(f'    asciz "sqrt(0x{opA:04X}) = 0x{result:04X}\\r\\n"')
     # print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
-    # print(f'    ld de,0x{opB:04X} ; 0x{opB:04X}')
-    # print(f'    call f16_sub')
+    # print(f'    call f16_sqrt')
     # print(f'    PRINT_HL_HEX " assembly result"')
     # print(f'    call printNewLine')
 
-    # # Compute the worst-case sig32Z = (sigX << expDiff) - sigY
-    # sigX = 0xffff  # maximum possible value for normalized significand + hidden bit
-    # expDiff = 13   # maximum before algorithm shortcuts
-    # sigY = 0xffff  # a realistic upper bound for the second operand's adjusted significand
 
-    # sigX_shifted = sigX << expDiff
-    # sig32Z = sigX_shifted - sigY
 
-    # print(f"sigX_shifted: {sigX_shifted} (0x{sigX_shifted:08X}), "
-    #     f"sigY: {sigY} (0x{sigY:04X}), "
-    #     f"sig32Z: {sig32Z} (0x{sig32Z:08X}), "
-    #     f"sig32Z.bit_length(): {sig32Z.bit_length()}")
+    # Input as string literals (hex float16 bit patterns or decimal strings)
+    valA_str = '0x0074da'
+    valB_str = '0x00f4da'
+
+    # Convert to float16 bit patterns (uint16)
+    opA = parse_float16_input(valA_str)
+    opB = parse_float16_input(valB_str)
+
+    print('; ----- DEBUG OUTPUT -----')
+
+    # Perform the subition using SoftFloat
+    result = f16_add_softfloat(opA, opB)
+
+    # Convert result to Python float
+    valA_float = float16_bits_to_float(opA)
+    valB_float = float16_bits_to_float(opB)
+    valR_float = float16_bits_to_float(result)
+
+    # Debug output: decimal first, then hex
+    print(f';    {valA_float} + {valB_float} = {valR_float}')
+    print(f';    0x{opA:04X} + 0x{opB:04X} = 0x{result:04X}')
+
+    # Assembly output: decimal first, then hex
+    print(f'\n; ----- ASSEMBLY OUTPUT -----')
+    print(f'    call printInline')
+    print(f'    asciz "{valA_float} + {valB_float} = {valR_float}\\r\\n"')
+    print(f'    call printInline')
+    print(f'    asciz "0x{opA:04X} + 0x{opB:04X} = 0x{result:04X}\\r\\n"')
+    print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
+    print(f'    ld de,0x{opB:04X} ; 0x{opB:04X}')
+    print(f'    call f16_add')
+    print(f'    PRINT_HL_HEX " assembly result"')
+    print(f'    call printNewLine')

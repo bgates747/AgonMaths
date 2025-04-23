@@ -77,7 +77,7 @@ hlu_div16:
 hlu_sdiv256:
     xor a ; assume hl is positive
     ld (@buffer),hl
-    SIGN_HLU
+    SIGN_UHL
     jp p,@hl_pos
     dec a
 @hl_pos:
@@ -117,7 +117,7 @@ hlu_floor:
 hlu_ceiling:
     push de ; save n
     call udiv24 ; de = quotient, hl = remainder
-    SIGN_HLU ; test remaider for zero
+    SIGN_UHL ; test remaider for zero
     jp z,@F ; if zero, nothing to add
     inc de ; add 1 to quotient for the ceiling
 @@:
@@ -324,3 +324,106 @@ add_uhl_a_signed:
                ; 15 cycles total
     ret
 ; end hlu_add_a_signed
+
+
+div_16x16_xeda:
+;;Inputs: DE is the numerator, BC is the divisor
+;;Outputs: DE is the result, HL is the remainder
+;;         A is a copy of E
+;;         BC is not changed
+;140 bytes
+;145cc
+    xor a 
+    sbc.s hl,hl
+    ld a,d
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    cpl 
+    ld d,a
+
+    ld a,e
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    adc.s hl,hl 
+    sbc.s hl,bc 
+    jr nc,$+4 
+    add.s hl,bc
+    rla 
+    cpl 
+    ld e,a
+    ret
+
+;;End of div16

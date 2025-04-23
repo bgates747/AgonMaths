@@ -3,6 +3,11 @@
 ; outputs: hl = a + b
 ; destroys: af, bc, de, ix
 f16_add:
+; ensure operands are 16-bits otherwise errors happen
+    dec hl
+    inc.s hl
+    dec de
+    inc.s de
 ; set index to global variables
     ld ix,s_globals
 ; compare signs

@@ -2,7 +2,7 @@
 ; test the sign of UHL
 ; inputs: UHL obviously
 ; outputs: sign flag set if UHL is negative, zero flag set if UHL is zero
-    MACRO SIGN_HLU
+    MACRO SIGN_UHL
     add hl,de ; 1 cycle
     or a ; clear flags ; 1 cycle
     sbc hl,de ; 2 cycles
@@ -41,7 +41,7 @@
     ; 15 cycles total
     ENDMACRO
 
-    MACRO hlu_mul256
+    MACRO HLU_MUL_256
     add hl,hl ; * 2
     add hl,hl ; * 4
     add hl,hl ; * 8

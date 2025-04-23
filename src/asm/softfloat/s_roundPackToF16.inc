@@ -46,15 +46,6 @@
 softfloat_roundPackToF16:
 ; uint_fast8_t roundIncrement = 0x8;
 ; uint_fast8_t roundBits = sig & 0xF;
-
-; ; DEBUG
-;     ld a,c
-;     PRINT_A_HEX "sign"
-;     ld a,b
-;     PRINT_A_HEX "exp"
-;     PRINT_HL_HEX_BIN "sigZ prior to rounding"
-; ; END DEBUG
-
 ; if (exp < 0) {
     ld a,b ; get exponent
     cp 0

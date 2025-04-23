@@ -13,9 +13,6 @@ softfloat_addMagsF16:
 ; sigA = fracF16UI( uiA );
     fracF16UI
     ld (ix+sigA),hl ; store sigA
-    ; call printNewLine ; DEBUG
-    ; PRINT_BC_HEX "store expA, signA" ; DEBUG
-    ; PRINT_HL_HEX "store sigA\r\n" ; DEBUG
 ; expB = expF16UI( uiB );
     ex de,hl ; flip operands
     expF16UI
@@ -24,13 +21,10 @@ softfloat_addMagsF16:
 ; sigB = fracF16UI( uiB );
     fracF16UI
     ld (ix+sigB),hl ; store sigB
-    ; PRINT_BC_HEX "store expB, signB" ; DEBUG
-    ; PRINT_HL_HEX "store sigB\r\n" ; DEBUG
 ; expDiff = expA - expB;
     ld a,(ix+expA)
     sub b
     ld (ix+expDiff),a ; store expDiff
-    ; PRINT_A_HEX "expDiff" ; DEBUG
 ; if ( ! expDiff ) {
     jp nz,@expDiff_not_zero
 ;     if ( ! expA ) {
@@ -39,9 +33,7 @@ softfloat_addMagsF16:
         jp nz,@expA_not_zero
 ;         uiZ = uiA + sigB;
             ld de,(ix+uiA)
-            ; call dumpRegistersHex ; DEBUG
             add hl,de
-            ; PRINT_HL_HEX "uiZ = uiA + sigB" ; DEBUG
 ;         goto uiZ;
             ret ; jp @uiZ
 ;     }
@@ -64,20 +56,11 @@ softfloat_addMagsF16:
 ;     signZ = signF16UI( uiA );
 ;     expZ = expA;
         ld bc,(ix+signA) ; expZ = b, signZ = c
-
-        ; PRINT_BC_HEX "expZ = expA, signZ = sign(uiA)" ; DEBUG 
-
 ;     sigZ = 0x0800 + sigA + sigB;
         ld hl,(ix+sigA)
-        ; PRINT_HL_HEX "sigA" ; DEBUG 
-
         ld de,(ix+sigB)
-        ; PRINT_DE_HEX "sigB" ; DEBUG 
-
         add hl,de ; hl = sigA + sigB
         set 3,h; add implicit 1
-        ; PRINT_HL_HEX "sigZ = 0x0800 + sigA + sigB" ; DEBUG 
-
 ;     if ( ! (sigZ & 1) && (expZ < 0x1E) ) {
         bit 0,l ; test sigZ for odd
         jp nz,@sigZ_odd
@@ -87,7 +70,6 @@ softfloat_addMagsF16:
 ;         sigZ >>= 1;
             srl h
             rr l
-            ; PRINT_HL_HEX "sigZ even, shifting >>= 1" ; DEBUG
 ;         goto pack;
             jp packToF16UI
 ;     }
@@ -96,7 +78,6 @@ softfloat_addMagsF16:
         add hl,hl
         add hl,hl
         add hl,hl
-        ; PRINT_HL_HEX "sigZ odd, shifting <<= 3" ; DEBUG
         jp softfloat_roundPackToF16
 ; } else {
 @expDiff_not_zero:
@@ -161,16 +142,10 @@ softfloat_addMagsF16:
 ;         uiZ = uiA;
 ;         if ( expA == 0x1F ) {
             ld a,(ix+expA)
-
-            ; PRINT_A_HEX "expA: if ( expA == 0x1F )" ; DEBUG
-
             cp 0x1F ; check expA for inf
             JR nz,@expA_not_inf
 ;             if ( sigA ) goto propagateNaN;
                 ld hl,(ix+sigA)
-
-                ; PRINT_HL_HEX "sigA: if ( sigA ) goto propagateNaN" ; DEBUG
-
                 SIGN_HL ; test sigA for zero
                 jp nz,@propagateNaN
 ;             goto uiZ;
@@ -191,16 +166,10 @@ softfloat_addMagsF16:
 ;         expZ = expA;
             ld a,(ix+expA)
             ld (ix+expZ),a
-
-            ; PRINT_A_HEX "expZ = expA" ; DEBUG 
-
 ;         sigX = sigA | 0x0400;
             ld hl,(ix+sigA)
             set 2,h ; set implicit 1
             ld (ix+sigX),hl ; store sigX
-
-            ; PRINT_HL_HEX "sigX = sigA | 0x0400" ; DEBUG 
-
 ;         sigY = sigB + (expB ? 0x0400 : sigB);
             ld hl,(ix+sigB)
             ld a,(ix+expB)
@@ -212,13 +181,10 @@ softfloat_addMagsF16:
             add hl,hl ; sigB + sigB
 @set_sigY_to_sigB:
             ld (ix+sigY),hl ; TODO: necessary?
-            ; PRINT_HL_HEX "sigY = sigB + (expB ? 0x0400 : sigB)" ; DEBUG 
-
 ;         shiftDist = 19 - expDiff;
             ld a,19
             sub (ix+expDiff)
             ld (ix+shiftDist),a
-            ; PRINT_A_HEX "shiftDist = 19 - expDiff" ; DEBUG 
 ;     }
 @calc_sig32Z: ; a needs to be shiftDist, hl needs to be sigY and sigX needs to be populated
 ;     sig32Z = ((uint_fast32_t) sigX<<19) + ((uint_fast32_t) sigY<<shiftDist);
@@ -229,9 +195,6 @@ softfloat_addMagsF16:
         add hl,hl ; 1 cycle
         adc a,a ; 1 cycle        
         djnz @sigY_shift ; 4 cycles
-
-        ; PRINT_AUHL_HEX "sigY<<shiftDist" ; DEBUG 
-
         ld (ix+sigY),hl ; store low 3 bytes of sigY
         ex de,hl
         ld c,(ix+sigY+2) ; c = upper middle byte of sigY
@@ -241,9 +204,6 @@ softfloat_addMagsF16:
         add hl,hl
         add hl,hl ; hl is now the upper word of sigX<<19
         add hl,bc ; hlde = sig32Z
-
-        ; PRINT_HLDE_HEX "sig32Z = sigX<<19 + sigY<<shiftDist" ; DEBUG 
-
 ;     if ( sig32Z < 0x40000000 ) {
         ld a,h
         cp 0x40

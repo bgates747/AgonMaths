@@ -158,9 +158,9 @@ udiv168:
     ld (div168_out+1),de
 @div256:
 ; multiply remainder by 256
-    hlu_mul256
+    HLU_MUL_256
 ; skip fractional computation if remainder is zero
-    SIGN_HLU
+    SIGN_UHL
     jr nz,@div_frac
     xor a
     jr @write_frac
@@ -414,7 +414,7 @@ distance168:
 ; compute the square root
     call sqrt24 ; de = sqrt(dx^2 + dy^2)
     ex de,hl ; hl = distance
-    hlu_mul256 ; convert back to 16.8 fixed
+    HLU_MUL_256 ; convert back to 16.8 fixed
     ret
 
 ; compute the euclidian distance between two cartesian coordinates

@@ -38,34 +38,20 @@ exit:
     include "../include/debug.inc"
 
 ; APPLICATION INCLUDES
-    include "../softfloat/globals.inc"
-    include "../softfloat/internals.inc"
-    include "../softfloat/f16_div.inc"
     include "../softfloat/f16_mul.inc"
-    include "../softfloat/f16_sqrt.inc"
+    include "../softfloat/f16_div.inc"
+    include "../softfloat/internals.inc"
     include "../softfloat/s_normSubnormalF16Sig.inc"
     include "../softfloat/s_roundPackToF16.inc"
     include "../softfloat/s_shiftRightJam32.inc"
 
 main:
-
-    ; call printInline
-    ; asciz "sqrt(-inf) = nan\r\n"
-    ; call printInline
-    ; asciz "sqrt(0xFC00) = 0x7E00\r\n"
-    ; ld hl,0xFC00 ; 0xFC00
-    ; call f16_sqrt
-    ; PRINT_HL_HEX " assembly result"
-    ; call printNewLine
-    ; ret
-
-test_softfloat:
     call vdu_cls
     call printInline
-    asciz "\r\nf16_sqrt test\r\n"
-    ld hl,6
+    asciz "\r\nmul_16_32 test\r\n"
+    ld hl,12
     ld (bytes_per_record),hl
-    ld hl,480000
+    ld hl,80000
     ld (bytes_read_max),hl
     call test_init ; open files for reading and writing
     ret z ; error opening files
@@ -74,19 +60,28 @@ test_softfloat:
     jr z,@read_end
     ld iy,filedata
 @calc_loop:
-; perform operation 
-    ld l,(iy+0) ; op1 low byte
-    ld h,(iy+1) ; op1 high byte
-    call f16_sqrt
-; write results to file buffer
-    ld (iy+4),l ; assembly sqrt low byte
-    ld (iy+5),h ; assembly sqrt high byte
+; perform multiplication 
+    ld hl,(iy+0) ; op1
+    ld de,(iy+2) ; op2
+    call mul_16x16_32
+    ld (iy+8),e ; assembly product low byte
+    ld (iy+9),d ; assembly product middle low byte
+    ld (iy+10),l ; assembly product middle high byte
+    ld (iy+11),h ; assembly product high byte
 ; check for error
-    ld e,(iy+2) ; python sqrt low byte
-    ld d,(iy+3) ; python sqrt high byte
+    ld e,(iy+6) ; python product middle high byte
+    ld d,(iy+7) ; python product high byte
+    or a ; clear carry
+    sbc.s hl,de
+    jr nz,@calc_error
+    ld l,(iy+8) ; assembly product low byte
+    ld h,(iy+9) ; assembly product middle low byte
+    ld e,(iy+4) ; python product low byte
+    ld d,(iy+5) ; python product middle low byte
     or a ; clear carry
     sbc.s hl,de
     jr z,@next_record
+@calc_error:
 ; bump error count
     ld hl,(errors)
     inc hl
@@ -101,7 +96,7 @@ test_softfloat:
     ld hl,(counter)
     dec hl
     ld (counter),hl
-    SIGN_HLU
+    SIGN_UHL
     jr nz,@calc_loop
 ; write to file
     call test_write_data
@@ -110,7 +105,7 @@ test_softfloat:
 @read_end:
     jp test_complete
 
-test_filename: asciz "../tests/f16_sqrt.bin"
-test_filename_out: asciz "../tests/f16_sqrt.bin"
+@test_filename: asciz "../tests/mul_16x16_32.bin"
+@test_filename: asciz "../tests/mul_16x16_32.bin"
 
     include "../include/files.inc"

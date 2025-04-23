@@ -67,7 +67,7 @@ def generate_fp16_sqrt_test(N, op_min, op_max, outfile):
 
 
 if __name__ == "__main__":
-    NUM_TESTS = 1000
+    NUM_TESTS = 100000
     OP_MIN = 0
     OP_MAX = 65504.0
     FREQ_SPECIALS = 0.2

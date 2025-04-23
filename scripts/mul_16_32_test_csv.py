@@ -44,7 +44,7 @@ def bin_to_csv(infile, outfile):
     print(f"All values formatted in hexadecimal with 0x prefix")
 
 if __name__ == "__main__":
-    CONVERT_INFILE = 'tests/mul_16_32.bin'
-    CONVERT_OUTFILE = 'tests/mul_16_32.csv'
+    CONVERT_INFILE = 'tests/mul_16x16_32.bin'
+    CONVERT_OUTFILE = 'tests/mul_16x16_32.csv'
     
     bin_to_csv(CONVERT_INFILE, CONVERT_OUTFILE)

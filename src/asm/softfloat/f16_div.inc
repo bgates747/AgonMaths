@@ -1,28 +1,29 @@
-; r0 = softfloat_approxRecip_1k0s[index]-((softfloat_approxRecip_1k1s[index]*(sigB & 0x3F))>>10);
-
 ; inputs: hl = dividend, de = divisor
 ; outputs: hl = float16 result
+; destroys af, bc, de, ix
 f16_div:
+; set index to global variables
+    ld ix,s_globals
 ; compute sign of the quotient
     ld a,h ; sign opA
     and %10000000
     xor d ; xor sign opA with sign opB
     and %10000000
-    ld (@signZ),a
+    ld (ix+signZ),a
 
 ; unpack opB
     ex de,hl
     call softfloat16_unpack
-    ld (@sigB),hl ; store sigB
+    ld (ix+sigB),hl ; store sigB
     ld a,b ; exponent
-    ld (@expB),a ; store exponent
+    ld (ix+expB),a ; store exponent
 
 ; unpack opA
     ex de,hl
     call softfloat16_unpack
     ld a,b ; exponent
-    ld (@expA),a
-    ld (@sigA),hl ; store sigA
+    ld (ix+expA),a
+    ld (ix+sigA),hl ; store sigA
 
 ; === HANDLE SPECIAL CASES ===
 ; if ( expA == 0x1F ) {
@@ -32,11 +33,11 @@ f16_div:
         SIGN_HL
         jp nz,@return_nan
 ;     if ( expB == 0x1F ) {
-        ld a,(@expB)
+        ld a,(ix+expB)
         cp 0x1F ; check expB for inf
         jp nz,@return_inf
 ;         if ( sigB ) goto propagateNaN;
-            ld hl,(@sigB)
+            ld hl,(ix+sigB)
             SIGN_HL
             jp nz,@return_nan ; non-signalling NaN
 ;         goto invalid;
@@ -46,11 +47,11 @@ f16_div:
 ; }
 @check_expB_inf:
 ; if ( expB == 0x1F ) {
-    ld a,(@expB) 
+    ld a,(ix+expB) 
     cp 0x1F ; check expB for inf
     jr nz,@check_expB_zero
 ;     if ( sigB ) goto propagateNaN;
-        ld hl,(@sigB)
+        ld hl,(ix+sigB)
         SIGN_HL
         jp nz,@return_nan ; non-signalling NaN
 ;     goto zero;
@@ -63,14 +64,14 @@ f16_div:
     or a ; check expB for zero
     jr nz,@check_expA_zero
 ; if ( ! sigB ) {
-    ld hl,(@sigB)
+    ld hl,(ix+sigB)
     SIGN_HL
     jr nz,@check_expA_zero
 ; if ( ! (expA | sigA) ) goto invalid;
-    ld a,(@expA)
+    ld a,(ix+expA)
     or a ; check expA for zero
     jr nz,@b_zero_a_nonzero
-    ld hl,(@sigA)
+    ld hl,(ix+sigA)
     SIGN_HL
     jr nz,@b_zero_a_nonzero
 ; 0/0 case
@@ -81,43 +82,43 @@ f16_div:
 ; }
 @check_expA_zero:
 ; if ( ! expA ) {
-    ld a,(@expA)
+    ld a,(ix+expA)
     or a ; check expA for zero
     jr nz,@end_specials
 ;     if ( ! sigA ) goto zero;
-        ld hl,(@sigA)
+        ld hl,(ix+sigA)
         SIGN_HL
         jp z,@return_zero
 ; }
 @end_specials:
 
 ; expZ = expA - expB + 0xE
-    ld a,(@expA)
+    ld a,(ix+expA)
     ld b,a
-    ld a,(@expB)
+    ld a,(ix+expB)
     sub b
     neg
     add 0x0E
 ; if sigA < sigB: expZ = expZ - 1, numShifts = 5
 ; else: numShifts = 4
 ; sigA = u16(sigA << numShifts)
-    ld bc,(@sigB)
+    ld bc,(ix+sigB)
     or a ; clear carry
     sbc.s hl,bc ; sigA - sigB (.s to force 16-bit subtraction)
-    ld hl,(@sigA)
+    ld hl,(ix+sigA)
     jr nc,@sigA_gte_sigB ; sigA < sigB
 ; expZ = expZ - 1
     dec a
 ; sigA = u16(sigA << 5)
     add hl,hl
 @sigA_gte_sigB:
-    ld (@expZ),a
+    ld (ix+expZ),a
 ; else: sigA = u16(sigA << 4)
     add hl,hl
     add hl,hl
     add hl,hl
     add hl,hl
-    ld (@sigA),hl ; store sigA shifted up
+    ld (ix+sigA),hl ; store sigA shifted up
 
 ; index = sigB>>6 & 0xF;
     ld l,c
@@ -140,7 +141,7 @@ f16_div:
     ld hl,(ix+32) ; approx1k1s
     ld a,c ; sigB low byte
     and 0x3F ; sigB & 0x3F
-    call mul16x8 ; (sigB & 0x3F) -> ade
+    call mul_16x8_24_ade ; (sigB & 0x3F) -> ade
 ; >>10
     or a ; clear carry
     rra
@@ -156,22 +157,22 @@ f16_div:
     pop ix ; send back how it came in
     or a ; clear carry
     sbc.s hl,de ; hl = r0 = approx1k0s - ((approx1k1s * (sigB & 0x3F)) >> 10)
-    ld (@r0),hl ; store r0
+    ld (ix+r0),hl ; store r0
 
 ; sigZ = u32((sigA * r0) >> 16)
-    ld de,(@sigA)
-    call mul_16_32 ; hl = sigZ
-    ld (@sigZ),hl
+    ld de,(ix+sigA)
+    call mul_16x16_32 ; hl = sigZ
+    ld (ix+sigZ),hl
     call @compute_sigZ_error
 
 ; sigZ += (rem * (uint_fast32_t) r0)>>26;
 ; both multiplicands are 16 bits so we can use 16x16->32 bit multiply
-    ld hl,(@r0)
-    call mul_16_32 ; hlde = rem * r0
+    ld hl,(ix+r0)
+    call mul_16x16_32 ; hlde = rem * r0
     ld a,h ; top byte of product
     srl a
     srl a
-    ld hl,(@sigZ)
+    ld hl,(ix+sigZ)
     add a,l
     ld l,a
     adc a,h
@@ -186,11 +187,11 @@ f16_div:
     jr nz,@return
 ;     sigZ &= ~1;
         res 0,l
-        ld (@sigZ),hl
+        ld (ix+sigZ),hl
 ;     rem = (sigA<<10) - sigZ * sigB;
         call @compute_sigZ_error
 ;     if ( rem & 0x8000 ) {
-        ld hl,(@sigZ)
+        ld hl,(ix+sigZ)
         ld a,d
         and 0x80
         jr z,@F
@@ -214,7 +215,7 @@ f16_div:
 
 @return:
 ; hl must be set to sigZ at this point
-    ld bc,(@signZ) ; b=expZ, c=signZ
+    ld bc,(ix+signZ) ; b=expZ, c=signZ
     jp softfloat_roundPackToF16 ; assumes hl holds sig
 @return_invalid: ; fow now, we don't distinguish between signalling and non-signalling NaN
 @return_nan:
@@ -222,27 +223,27 @@ f16_div:
     ret
 @return_inf:
     ld l,0
-    ld a,(@signZ)
+    ld a,(ix+signZ)
     or 0x7C
     ld h,a
     ret
 @return_zero:
     ld l,0
-    ld a,(@signZ)
+    ld a,(ix+signZ)
     ld h,a
     ret
 ; compute the error of sigZ
-; inputs: hl = sigZ, (@sigB), (@sigA), (@r0)
+; inputs: hl = sigZ, (ix+sigB), (ix+sigA), (ix+r0)
 ; returns: hlde = rem (only de should matter)
 @compute_sigZ_error:
 ; rem = u32((sigA << 10) - sigZ * sigB)
-    ld de,(@sigB)
-    call mul_16_32 ; hlde = sigZ * sigB
+    ld de,(ix+sigB)
+    call mul_16x16_32 ; hlde = sigZ * sigB
     push hl ; stack upper word of product
-    ld hl,(@sigA)
+    ld hl,(ix+sigA)
     add hl,hl
     add hl,hl
-    ; ld (@scratch),hl ; don't need since difference will not occupy more than two bytes
+    ; ld (ix+rem),hl ; don't need since difference will not occupy more than two bytes
     pop bc ; restore upper word of product (was hl)
     xor a ; a is our phantom zero register
 ; now we're set to do the subtraction:
@@ -259,180 +260,9 @@ f16_div:
 ;     ld a,h
 ;     sbc a,c
 ;     ld c,a
-;     ld a,(@scratch+2) ; hlu
+;     ld a,(ix+rem+2) ; hlu
 ;     sub b
 ;     ld b,a ; we assume no carry out
     ret
 ; end @compute_sigZ_error
-
-; scratch variables
-@expA: db 0
-@expB: db 0
-@sigA: dl 0
-@sigB: dl 0
-@r0:  dl 0
-@signZ: db 0
-@expZ: db 0
-@sigZ: dl 0
-@scratch: dl 0
 ; end f16_div
-
-; Inputs: hl is the 16 bit multiplicand, a is the 8 bit multiplier
-; Outputs: ade = 24-bit result
-; Destroys: f, hl
-mul16x8:
-    ld d,l
-    ld e,a
-    mlt de ; l * a
-    ld l,a
-    mlt hl ; h * a
-; hl<<8 + de -> ade
-    ld a,d
-    add a,l
-    ld d,a
-    adc a,h
-    sub a,d
-    ret
-; end mul16x8
-
-; ; Inputs: hl is the 16 bit multiplicand, a is the 8 bit multiplier
-; ; Outputs: uhl = 24-bit result
-; ; Destroys: f, de
-; mul16x8:
-;     ld d,l
-;     ld e,a
-;     mlt de ; l * a
-;     ld l,a
-;     mlt hl ; h * a
-; ; hl<<8 + de -> uhl
-;     add hl,hl ; 1
-;     add hl,hl ; 2
-;     add hl,hl ; 3
-;     add hl,hl ; 4
-;     add hl,hl ; 5
-;     add hl,hl ; 6
-;     add hl,hl ; 7
-;     add hl,hl ; 8
-;     add hl,de
-;     ret
-; ; end mul16x8
-
-softfloat_approxRecip_1k0s:
-    dw 0xFFC4, 0xF0BE, 0xE363, 0xD76F, 0xCCAD, 0xC2F0, 0xBA16, 0xB201
-    dw 0xAA97, 0xA3C6, 0x9D7A, 0x97A6, 0x923C, 0x8D32, 0x887E, 0x8417
-
-softfloat_approxRecip_1k1s:
-    dw 0xF0F1, 0xD62C, 0xBFA1, 0xAC77, 0x9C0A, 0x8DDB, 0x8185, 0x76BA
-    dw 0x6D3B, 0x64D4, 0x5D5C, 0x56B1, 0x50B6, 0x4B55, 0x4679, 0x4211
-
-
-div_16_32_xeda:
-    call div_16_xeda
-    push de
-    call div_16_xeda
-    pop hl
-    ex de,hl
-    ret
-
-
-div_16_xeda:
-;;Inputs: DE is the numerator, BC is the divisor
-;;Outputs: DE is the result, HL is the remainder
-;;         A is a copy of E
-;;         BC is not changed
-;140 bytes
-;145cc
-    xor a 
-    sbc.s hl,hl
-    ld a,d
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    cpl 
-    ld d,a
-
-    ld a,e
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    adc.s hl,hl 
-    sbc.s hl,bc 
-    jr nc,$+4 
-    add.s hl,bc
-    rla 
-    cpl 
-    ld e,a
-    ret
-
-;;End of div16
