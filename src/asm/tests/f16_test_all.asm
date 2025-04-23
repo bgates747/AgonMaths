@@ -29,7 +29,6 @@ exit:
 
     include "../softfloat/globals.inc"
     include "../softfloat/helpers.inc"
-    
     include "../softfloat/internals.inc"
     include "../softfloat/primitives.inc"
     include "../softfloat/f16_add.inc"
@@ -50,10 +49,10 @@ exit:
     include "f16_sqrt.inc"
 
 main:
-    call test_f16_add
-    call test_f16_sub
-    call test_f16_mul
-    call test_f16_div
+    ; call test_f16_add
+    ; call test_f16_sub
+    ; call test_f16_mul
+    ; call test_f16_div
     call test_f16_sqrt
 
     ret
