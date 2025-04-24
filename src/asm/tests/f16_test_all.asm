@@ -47,13 +47,15 @@ exit:
     include "f16_mul.inc"
     include "f16_sub.inc"
     include "f16_sqrt.inc"
+    include "mul_32x16_48.inc"
 
 main:
-    ; call test_f16_add
-    ; call test_f16_sub
-    ; call test_f16_mul
-    ; call test_f16_div
+    call test_f16_add
+    call test_f16_sub
+    call test_f16_mul
+    call test_f16_div
     call test_f16_sqrt
+    call test_mul_32x16_48
 
     ret
 
