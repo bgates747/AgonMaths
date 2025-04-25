@@ -82,37 +82,6 @@ mul_16x16_32:
 ; end mul_16x16_32
 
 ; multiply 32 x 16 -> 48 bit product
-; inputs: hlde = 32-bit multiplicand, bc = 16-bit multiplier, ix pointing to s_globals
-; outputs: hldebc = 48-bit product
-mul_32x16_48_old:
-    push bc
-    push de
-; hl * bc
-    ld e,c
-    ld d,b
-    call mul_16x16_32 ; hlde = hl * bc
-    ld (ix+sig32Z),de
-    ld (ix+sig32Z+2),hl
-; de * bc
-    pop de 
-    pop hl ; bc
-    call mul_16x16_32 ; hlde = de * bc
-; accumulate bc out
-    ld c,e
-    ld b,d ; bc out
-; accumulate de out
-    ld de,(ix+sig32Z)
-    add.s hl,de
-    ex de,hl ; de out
-; accumulate hl out
-    ld hl,(ix+sig32Z+2)
-    ld a,h
-    adc a,0
-    ld h,a
-    ret
-; end mul_32x16_48
-
-; multiply 32 x 16 -> 48 bit product
 ; inputs: hlde = 32-bit multiplicand, bc = 16-bit multiplier
 ; outputs: hldebc = 48-bit product
 mul_32x16_48:
