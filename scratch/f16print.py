@@ -47,7 +47,7 @@ def print_half(value):
     c_text = ffi.string(cstr).decode()
 
     # echo what happened
-    print(f"{value!r:>10} → bits=0x{bits:04X} → C: {c_text:<20} Python: {py_float!r}")
+    print(f"{value!r:>10} → bits = 0x{bits:04X} → C: {c_text:<20} Python: {py_float!r}")
 
 
 
@@ -63,4 +63,7 @@ if __name__ == "__main__":
     # print_half(-128.5)       # Python float
     # print_half("0x3C00")    # raw bits for 1.0
     # print_half("0xFC00")    # raw bits for -Infinity
-    print_half("0x0001")
+    # print_half("0x0001")
+
+    # print_half(1024.0)
+    print_half(65408.0)

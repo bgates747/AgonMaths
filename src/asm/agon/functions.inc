@@ -143,7 +143,9 @@ DisplayHexPrefix:
     pop hl
     ENDMACRO
 
-
+printDecHL:
+    dec hl
+    inc.s hl
 ; Prints the right justified decimal value in UHL without leading zeroes
 ; UHL : Value to print
 ; preserves all registers and flags

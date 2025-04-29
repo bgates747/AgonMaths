@@ -210,6 +210,7 @@
     ENDMACRO
 
     MACRO PRINT_HL_HEX_BIN msg
+        push bc
         push de
         push af
         push hl
@@ -221,9 +222,11 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_A_HEX msg
+        push bc
         push de
         push hl
         push af
@@ -239,9 +242,11 @@
         pop af
         pop hl
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_HL_HEX msg
+        push bc
         push de
         push af
         push hl
@@ -255,9 +260,11 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_UHL_HEX msg
+        push bc
         push de
         push af
         push hl
@@ -271,9 +278,11 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_AUHL_HEX msg
+        push bc
         push af
         push hl
         push de
@@ -289,9 +298,11 @@
         pop de
         pop hl
         pop af
+        pop bc
     ENDMACRO
 
     MACRO PRINT_BC_HEX msg
+        push bc
         push de
         push af
         push hl
@@ -307,9 +318,11 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_DE_HEX msg
+        push bc
         push de
         push af
         push hl
@@ -324,9 +337,11 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_HLDE_HEX msg
+        push bc
         push de
         push af
         push hl
@@ -340,9 +355,11 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_DEHL_HEX msg
+        push bc
         push de
         push af
         push hl
@@ -356,9 +373,11 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_AHL_HEX msg
+        push bc
         push de
         push af
         push hl
@@ -374,9 +393,11 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO PRINT_ADE_HEX msg
+        push bc
         push de
         push af
         push hl
@@ -392,6 +413,7 @@
         pop hl
         pop af
         pop de
+        pop bc
     ENDMACRO
 
     MACRO DUMP_REGISTERS_HEX msg

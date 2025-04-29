@@ -338,42 +338,42 @@ div_16x16_xeda:
     ld a,d
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
@@ -383,47 +383,381 @@ div_16x16_xeda:
     ld a,e
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     adc.s hl,hl 
-    sbc.s hl,bc 
+    sbc hl,bc 
     jr nc,$+4 
     add.s hl,bc
     rla 
     cpl 
     ld e,a
     ret
+;;End of div16x16_xeda
 
-;;End of div16
+DEHL_Div_10:
+; https://github.com/Zeda/Z80-Optimized-Routines/blob/master/math/division/DEHL_Div_10.z80
+;Inputs:
+;     DEHL
+;Outputs:
+;     DEHL is the quotient
+;     A is the remainder
+;     B is the remainder
+;     C is 10
+;912cc~941cc
+
+    xor a
+    ld c,10
+
+    rl d 
+    rla
+    rl d 
+    rla
+    rl d 
+    rla
+    rl d 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl d 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl d 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl d 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl d 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+
+    rl e 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl e 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl e 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl e 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl e 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl e 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl e 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl e 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+
+; THIS SECTION IS BUGGED
+    ; ld b,a
+    ; ld a,l 
+    ; rra 
+    ; ccf 
+    ; ld l,a
+    ; ld a,h 
+    ; rra 
+    ; ccf 
+    ; ld h,a
+    ; ld a,e 
+    ; rra 
+    ; ccf 
+    ; ld e,a
+    ; ld a,d 
+    ; rra 
+    ; ccf 
+    ; ld d,a
+    ; ld a,b
+; END BUGGED SECTION
+
+; this is a very kludgy way to accomplish what the bugged section was trying to do
+    ld b,a
+    ccf
+    push af ; save carry
+
+    ld a,0xFF
+    xor l
+    ld l,a
+
+    ld a,0xFF
+    xor h
+    ld h,a
+    
+    ld a,0xFF
+    xor e
+    ld e,a
+
+    ld a,0x0F
+    xor d
+    ld d,a
+
+    pop af ; restore carry
+
+    adc.s hl,hl
+    ex de,hl
+    adc hl,hl
+    ex de,hl
+
+    ld a,b
+
+    ret
+; end DEHL_Div_10
+
+HL_Div_10:
+;Inputs:
+;     HL
+;Outputs:
+;     HL is the quotient
+;     A is the remainder
+;     B is the remainder
+;     C is 10
+    xor a
+    ld c,10
+
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl h 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+    rl l 
+    rla 
+    sub c 
+    jr nc,$+3 
+    add a,c
+
+    ld b,a
+    ccf
+    push af ; save carry
+
+    ld a,0xFF
+    xor l
+    ld l,a
+
+    ld a,0xFF
+    xor h
+    ld h,a
+
+    pop af ; restore carry
+    adc.s hl,hl
+
+    ld a,b
+
+    ret

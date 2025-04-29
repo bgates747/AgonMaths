@@ -66,6 +66,31 @@ exit:
     include "f16_test_print.inc"
     include "mul_32x16_48.inc"
 main:
+    ; ld de,0
+    ; ld hl,1280
+    ; call DEHL_Div_10
+    ; PRINT_DEHL_HEX "QUOTIENT"
+    ; call printDec
+    ; call printNewLine
+    ; call printHexA
+    ; call printNewLine
+    ; ret
+
+    ; ld hl,1280
+    ; call HL_Div_10
+    ; call printDec
+    ; call printNewLine
+    ; call printHexA
+    ; call printNewLine
+    ; ret
+
+    ; ld hl,0x6400 ; passes
+    ; ld hl,0x7BFC ; passes
+
+    ; call f16_print
+    ; call printString
+    ; call printNewLine
+    ; ret
 
     ; call test_f16_add
     ; call test_f16_sub

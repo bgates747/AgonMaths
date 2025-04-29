@@ -121,23 +121,27 @@ f16_print:
     ld (ix+sig32Y+2),bc ; clear sig32Y high word
 ; uint32_t expY = 0;
 ; if (expZ >= 0) {
+    jr z,@expZ_eq_zero
     jp m,@expZ_lt0
         ld b,a ; loop counter = expZ
         xor a
         ld (ix+expY),a ; store expY
         ; PRINT_A_HEX "    expY = 0;"
-    @expZ_gte0_loop:
-    ; sig32X = sig32Z << expZ;
-        ex de,hl ; de = low word
-        add.s hl,hl ; low word <<= 1, .s to force 16-bit add
-        ex de,hl
-        adc.s hl,hl ; high word <<= 1, .s to force 16-bit adc
+        @expZ_gte0_loop:
+        ; sig32X = sig32Z << expZ;
+            ex de,hl ; de = low word
+            add.s hl,hl ; low word <<= 1, .s to force 16-bit add
+            ex de,hl
+            adc.s hl,hl ; high word <<= 1, .s to force 16-bit adc
         djnz @expZ_gte0_loop ; loop until all bits shifted
+    @expZ_eq_zero:
         ; PRINT_DEHL_HEX "sig32X = sig32Z << expZ;"
         ld (ix+sig32X),hl ; store sig32X low word
         ld (ix+sig32X+2),de ; store sig32X high word
-        ; ld bc,0 ; DEBUG
+; DEBUG
+        ; ld bc,0 
         ; PRINT_BC_HEX "    sig32Y = 0;"
+; END DEBUG
         jp @convert_int_to_string
 ; } else {
 @expZ_lt0:
@@ -178,11 +182,13 @@ f16_print:
         ld (ix+sig32Y+2),hl ; store sig32Y high word
 ; }
 @convert_int_to_string:
+; // Convert integer part to decimal string
     ld iy,strBuff+5 ; one's place
 ; if (sig32X == 0) {
     ld hl,(ix+sig32X) ; get sig32X low word
     ZERO_HL
     jp nz,@sig32X_not_zero
+        ; PRINT_HL_HEX "    sig32X == 0;"
 ;     *iy++ = '0';
         ld a,'0'
         ld (iy),a
@@ -191,6 +197,7 @@ f16_print:
         jp @write_spaces
 ; } else {
     @sig32X_not_zero:
+        ; PRINT_HL_HEX "    sig32X != 0;"
 ;     char temp[16];
 ;     int ti = 0;
         di ; we'll be using af'
@@ -203,13 +210,16 @@ f16_print:
             ex af,af' ; save ti
 ;         temp[ti++] = '0' + (sig32X % 10);
             call hl_mod10
+            ; ; PRINT_A_HEX "    sig32X % 10"
             add a,'0'
             ld (iy),a ; store digit
             dec iy ; move to next position
 ;         sig32X  /= 10;
             pop hl ; restore sig32X
-            ld de,0x199A ; reciprocal
-            call mul_16x16_32
+
+            call HL_Div_10
+            
+            ; PRINT_UHL_HEX "  sig32X /= 10;"
             ex af,af' ; restore ti
             dec a ; decrement ti
             jp @write_sig32X_loop ; loop until all digits written
