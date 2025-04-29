@@ -1,8 +1,8 @@
 canonicalNaNF16: EQU 0x7E00
 
-str_inf: asciz "-Inf"
-str_nan: asciz "NaN"
-str_zero: asciz "-0"
+str_inf: asciz " Inf"
+str_nan: asciz " NaN"
+str_zero: asciz " 0"
 
 str_numbers: db "zzzzzzzz"
 strBuff:      blkb 32,0

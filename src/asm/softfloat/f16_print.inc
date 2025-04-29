@@ -19,6 +19,11 @@
 
 f16_print:
 ; ; DEBUG
+;     ld hl,str_nan
+;     ret
+; ; END DEBUG
+
+; ; DEBUG
 ;     push hl
 ;     ld hl,strBuff0
 ;     ld de,strBuff

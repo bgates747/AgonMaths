@@ -7,9 +7,9 @@ test_f16_print:
 ; do the test
     call printInline
     asciz "\r\nf16_print test\r\n"
-    ld hl,6
+    ld hl,64
     ld (bytes_per_record),hl
-    ld hl,120000
+    ld hl,262144
     ld (bytes_read_max),hl
     call test_init ; open files for reading and writing
     ret z ; error opening files
@@ -18,24 +18,69 @@ test_f16_print:
     jr z,@read_end
     ld iy,filedata
 @calc_loop:
+; ; DEBUG
+;     call printNewLine
+;     push iy
+;     pop hl
+;     ld hl,(hl)
+;     call printHexHL
+;     ld a,' '
+;     rst.lil 10h
+; ; END DEBUG
+
+; ; DEBUG
+;     push iy
+;     pop hl
+;     inc hl
+;     inc hl
+;     call printString
+;     ld a,' '
+;     rst.lil 10h
+; ; END DEBUG
+
 ; perform operation 
     ld hl,(iy+0) ; op1
+    push iy
     call f16_print
+    pop iy
+
+; ; DEBUG
+;     push hl
+;     call printString
+;     pop hl
+; ; END DEBUG
+
+; ; DEBUG
+;     call waitKeypress
+; ; END DEBUG
+
+    push iy
+    push hl
 ; write results to file buffer
-    ld (iy+4),l ; assembly result low byte
-    ld (iy+5),h ; assembly result high byte
+    lea iy,iy+33
+    push iy
+    pop de
+    push de
+    ld bc,31
+    ldir
 ; check for error
-    ld e,(iy+2) ; python result low byte
-    ld d,(iy+3) ; python result high byte
-    or a ; clear carry
-    sbc.s hl,de
-    jr z,@next_record
+    pop de
+    pop hl
+    ld b,31
+@error_loop:
+    ld a,(de)
+    cp (hl)
+    jr nz,@count_error
+    djnz @error_loop
+    jr @next_record
+@count_error:
 ; bump error count
     ld hl,(errors)
     inc hl
     ld (errors),hl
 @next_record:
 ; write results to file buffer
+    pop iy
     ld de,(bytes_per_record)
     add iy,de; bump data pointer
     ld hl,(records)
@@ -53,4 +98,4 @@ test_f16_print:
 @read_end:
     jp test_complete
 
-@test_filename: asciz "../tests/f16_print.bin"
+@test_filename: asciz "../scratch/tests/f16_print_all.bin"

@@ -67,73 +67,15 @@ exit:
     include "mul_32x16_48.inc"
 main:
 
-;     ld de,0x00C1
-;     ld hl,0x0000
-; ;   12648448 * 10 = 0x078A0000
-
-;             add.s hl,hl
-;             ex de,hl
-;             adc hl,hl 
-;             ex de,hl ; sig32Y * 2
-;             push de ; sig32Y * 2 high word
-;             push hl ; sig32Y * 2 low word
-;             add.s hl,hl
-;             ex de,hl
-;             adc hl,hl 
-;             ex de,hl ; sig32Y * 4
-;             add.s hl,hl
-;             ex de,hl
-;             adc hl,hl 
-;             ex de,hl ; sig32Y * 8
-;             pop bc ; sig32Y * 2 low word
-;             add.s hl,bc
-;             ex de,hl
-;             pop bc ; sig32Y * 2 high word
-;             adc hl,bc
-;             ex de,hl ; sig32Y * 10
-;             PRINT_DEHL_HEX "DEHL * 10"
-
-;             ret
-
-
-    ld hl,canonicalNaNF16 ; PASSES
-    ld hl,0x7c00 ; infinity PASSES
-    ld hl,0xfc00 ; negative infinity PASSES
-    ld hl,0 ; zero PASSES
-    ld hl,0x8000 ; negative zero PASSES
-    ld hl,0x7bff ; max normal ; PASSES
-    LD HL,0xFBFF ; min normal ; PASSES
-    ld hl,0x5800 ; 128 ; PASSES
-    ld hl,0x0001 ; smallest positive subnormal ; PASSES
-    ld hl,0x8001 ; largest negative subnormal ; PASSES
-    ld hl,0xD800 ; -128 ; PASSES
-    ld hl,0xD804 ; -128.5 ; PASSES
-    ld hl,0x4248 ; just under pi 3.140625
-    ld hl,0x4249 ; just over pi 3.142578125
-
-    call f16_print
-    ; ld hl,str_numbers
-    call printString
-    call printNewLine
-
-    ; ld hl,strBuff
-    ; ld a,32
-    ; call dumpMemoryHex
-    ; call printNewLine
-    ret
-
     ; call test_f16_add
     ; call test_f16_sub
     ; call test_f16_mul
     ; call test_f16_div
     ; call test_f16_sqrt
-    ; call test_f16_print
+    call test_f16_print
     ; call test_mul_32x16_48
 
     ret
-
-strBuff0: blkb 31,'x'
-    db 0 ; null terminator
 
 ; must be final include so filedata doesn't stomp other application code or data
     include "f16_test_all.inc"
