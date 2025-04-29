@@ -1,12 +1,3 @@
-; test the 16-bit sign of HL
-; inputs: HL
-; outputs: sign flag set if HL is negative, zero flag set if HL is zero, ***hlu is zeroed***
-    MACRO SIGN_HL
-    add hl,de
-    or a ; clear flags
-    sbc.s hl,de ; 16-bit subtract so bit 7 of H is the sign. ***clears hlu***
-    ENDMACRO
-
 ; Inputs: hl is the 16 bit multiplicand, a is the 8 bit multiplier
 ; Outputs: ade = 24-bit result
 ; Destroys: f, hl
@@ -111,3 +102,96 @@ mul_32x16_48:
     inc hl ; Cannot overflow 16 bits
     ret
 ; end mul_32x16_48_calc84
+
+; https://www.cemetech.net/forum/viewtopic.php?t=12833&start=0
+;Inputs:
+;  HL:DE  32-bit unsigned integer
+;Outputs:
+;  A = HLDE mod 10
+;  Z flag is set if divisible by 10
+;Destroys:
+;  HL
+;  25 bytes,  109cc
+hlde_mod10:
+   add.s hl,de                  ;add words, n mod 65535 (+1)
+   ld a,h                     ;add bytes
+   adc a,l
+   adc a,0                    ;n mod 255 (+1)
+   ld h,a                     ;add nibbles
+   rrca 
+   rrca 
+   rrca 
+   rrca
+   add a,h
+   adc a,0                    ;n mod 15 (+1) in both nibbles
+   daa
+   ld h,a
+   sub e                      ; Test if quotient is even or odd
+   rra
+   sbc a,a
+   and 5
+   add a,h
+   daa
+   and 0Fh
+   ret
+; end hlde_mod10
+
+; https://www.cemetech.net/forum/viewtopic.php?t=12833&start=0
+;Inputs:
+;  HL  16-bit unsigned integer
+;Outputs:
+;  A = HL mod 10
+;  Z flag is set if divisible by 10
+;Destroys:
+;  HL
+;  24 bytes,  98cc
+hl_mod10:
+   ld a,h                     ;add bytes
+   add a,l
+   adc a,0                    ;n mod 255 (+1)
+   ld h,a                     ;add nibbles
+   rrca 
+   rrca
+   rrca
+   rrca
+   add a,h
+   adc a,0                    ;n mod 15 (+1) in both nibbles
+   daa
+   ld h,a
+   sub l
+   rra
+   sbc a,a
+   and 5
+   add a,h
+   daa
+   and 0Fh
+   ret
+; end hl_mod10
+
+; https://www.cemetech.net/forum/viewtopic.php?t=12833&start=0
+;Inputs:
+;  A  8-bit unsigned integer
+;Outputs:
+;  A = A mod 10
+;  Z flag is set if divisible by 10
+;Destroys:
+;  HL
+a_mod10:
+   ld h,a                     ;add nibbles
+   rrca 
+   rrca
+   rrca
+   rrca
+   add a,h
+   adc a,0                    ;n mod 15 (+1) in both nibbles
+   daa
+   ld l,a                     ; -- h -> l for 8-bit
+   sub h                      ; -- l -> h for 8-bit. Test if quotient is even or odd
+   rra
+   sbc a,a
+   and 5
+   add a,l                    ; -- h -> l for 8-bit
+   daa
+   and 0Fh
+   ret
+; end a_mod10

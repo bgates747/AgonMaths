@@ -86,9 +86,20 @@ printHexHLDE:
     call printHex16
     ex de,hl
     call printHex16
+    ex de,hl
     ld a,' '
     rst.lil 10h
+    pop af
+    ret
+
+printHexDEHL:
+    push af
     ex de,hl
+    call printHex16
+    ex de,hl
+    call printHex16
+    ld a,' '
+    rst.lil 10h
     pop af
     ret
 

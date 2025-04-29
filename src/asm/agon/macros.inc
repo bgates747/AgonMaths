@@ -18,6 +18,15 @@
     sbc.s hl,de ; 16-bit subtract so bit 7 of H is the sign. ***clears hlu***
     ENDMACRO
 
+; test the 16-bit value of HL for zero
+; inputs: HL
+; outputs: zero flag set if HL is zero
+; destroys: A
+    MACRO ZERO_HL
+    ld a,h
+    or l
+    ENDMACRO
+
 ; put the value in A into HLU
 ; affects: HLU
 ; destroys: nothing
@@ -326,6 +335,22 @@
         ld a,'x'
         rst.lil 0x10
         call printHexHLDE
+        call printInline
+        asciz msg,"\r\n"
+        pop hl
+        pop af
+        pop de
+    ENDMACRO
+
+    MACRO PRINT_DEHL_HEX msg
+        push de
+        push af
+        push hl
+        ld a,'0'
+        rst.lil 0x10
+        ld a,'x'
+        rst.lil 0x10
+        call printHexDEHL
         call printInline
         asciz msg,"\r\n"
         pop hl

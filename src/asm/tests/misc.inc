@@ -1,58 +1,3 @@
-; test the sign of UHL
-; inputs: UHL obviously
-; outputs: sign flag set if UHL is negative, zero flag set if UHL is zero
-    MACRO SIGN_UHL
-    add hl,de
-    or a ; clear flags
-    sbc hl,de
-    ENDMACRO
-
-    MACRO HLU_MUL_256
-    add hl,hl ; * 2
-    add hl,hl ; * 4
-    add hl,hl ; * 8
-    add hl,hl ; * 16 
-    add hl,hl ; * 32
-    add hl,hl ; * 64
-    add hl,hl ; * 128
-    add hl,hl ; * 256
-    ENDMACRO
-
-    MACRO SRL_UHL
-    dec sp ; 1 cycle
-    push hl ; 4 cycles
-    inc sp ; 1 cycle
-    pop hl ; 4 cycles
-    inc hl ; 1 cycle
-    dec.s hl ; 2 cycles <-- the .s sets hlu to zero (undocumented)
-    ; 13 cycles total
-    ENDMACRO
-
-; put the value in HLU into A
-    MACRO HLU_TO_A
-    dec sp ; 1 cycle
-    push hl ; 4 cycles
-    inc sp ; 1 cycle
-    pop af ; 4 cycles
-    ; 10 cycles total
-    ENDMACRO
-
-    MACRO PRINT_HL_HEX msg
-        push de
-        push af
-        push hl
-        ld a,'0'
-        rst.lil 0x10
-        ld a,'x'
-        rst.lil 0x10
-        call printHexHL
-        call printInline
-        asciz msg,"\r\n"
-        pop hl
-        pop af
-        pop de
-    ENDMACRO
-
 ; VDU 12: Clear text area (CLS)
 vdu_cls:
     ld a,12
@@ -157,6 +102,61 @@ printDec:
     RET
 _printDecBuffer: blkb 16,0 ; a few bytes extra just to be sure
 _printDec168Buffer: blkb 16,0 ; a few bytes extra just to be sure
+
+printDec8:
+; back up all the things
+    push af
+    push bc
+    push de
+    push hl
+; initialize hl to 0 and load it with a
+    ld hl,0
+    ld l,a
+; convert l to ascii
+    LD DE, _printDecBuffer
+    CALL u8_to_ascii
+; replace leading zeroes with spaces
+    LD HL, _printDecBuffer
+    ld B, 3 ; if A was 0, we want to keep the final zero 
+@loop:
+    LD A, (HL)
+    CP '0'
+    JP NZ, @done
+    LD A, ' '
+    LD (HL), A
+    INC HL
+    DJNZ @loop
+@done:
+    LD HL, _printDecBuffer+1
+    CALL printString
+; restore all the things
+    pop hl
+    pop de
+    pop bc
+    pop af
+    RET
+; end printDec8
+
+printDecS8:
+    push af
+    bit 7,a
+    jr z,@F
+    neg
+    push af
+    ld a,'-'
+    rst.lil 10h
+    pop af
+    call printDec8
+    pop af
+    ret
+@@:
+    push af
+    ld a,'+'
+    rst.lil 10h
+    pop af
+    call printDec8
+    pop af
+    ret
 
 ; This routine converts the unsigned 24-bit value in HLU into its ASCII representation, 
 ; starting to memory location pointing by DE, in decimal form and with leading zeroes 
