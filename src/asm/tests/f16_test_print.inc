@@ -18,56 +18,31 @@ test_f16_print:
     jr z,@read_end
     ld iy,filedata
 @calc_loop:
-; ; DEBUG
-;     call printNewLine
-;     push iy
-;     pop hl
-;     ld hl,(hl)
-;     call printHexHL
-;     ld a,' '
-;     rst.lil 10h
-; ; END DEBUG
-
-; ; DEBUG
-;     push iy
-;     pop hl
-;     inc hl
-;     inc hl
-;     call printString
-;     ld a,' '
-;     rst.lil 10h
-; ; END DEBUG
-
 ; perform operation 
     ld hl,(iy+0) ; op1
-    push iy
-    call f16_print
-    pop iy
-
-; ; DEBUG
-;     push hl
+    push iy ; file buffer pointer
+    call f16_print ; hl points to result string
+; ; print result
 ;     call printString
-;     pop hl
-; ; END DEBUG
-
-; ; DEBUG
-;     call waitKeypress
-; ; END DEBUG
-
-    push iy
-    push hl
+;     call printNewLine
+    pop iy ; restore file buffer pointer
 ; write results to file buffer
-    lea iy,iy+33
-    push iy
-    pop de
-    push de
-    ld bc,31
-    ldir
+    push iy ; stack file buffer pointer
+    push hl ; stack result string pointer
+    lea iy,iy+33 ; move file pointer to output
+    push iy ; copy output pointer 
+    pop de ; to de
+    push de ; stack output pointer
+    ld bc,31 ; bytes to copy
+    ldir ; copy string buffer to file buffer
 ; check for error
-    pop de
-    pop hl
-    ld b,31
+    pop de ; restore output pointer
+    pop hl ; restore result string pointer
+    ld b,31 ; bytes to compare
 @error_loop:
+    ld a,(de)
+    or (hl)
+    jr z,@next_record
     ld a,(de)
     cp (hl)
     jr nz,@count_error
@@ -79,8 +54,7 @@ test_f16_print:
     inc hl
     ld (errors),hl
 @next_record:
-; write results to file buffer
-    pop iy
+    pop iy ; restore file buffer pointer
     ld de,(bytes_per_record)
     add iy,de; bump data pointer
     ld hl,(records)

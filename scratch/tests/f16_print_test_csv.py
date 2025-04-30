@@ -4,6 +4,10 @@ import csv
 import os
 from collections import Counter
 
+def as_text(cell):
+    # wrap in ="..." so the spreadsheet sees a formula that yields text
+    return f'="{cell}"'
+
 def process_f16_print_testfile(infile, detail_outfile):
     EXPECTED_LEN = 31  # 1 for sign, 1 for decimal point, 28 for digits, 1 for null
     RECORD_SIZE = 2 + 2 * EXPECTED_LEN  # 2 bytes for half, 2 strings of length EXPECTED_LEN
@@ -50,10 +54,11 @@ def process_f16_print_testfile(infile, detail_outfile):
             det_writer.writerow([
                 i,
                 f"0x{half_bits:04X}",
-                expected,
-                actual,
+                as_text(expected),
+                as_text(actual),
                 match
             ])
+
 
     print(f"Wrote detail CSV to {detail_outfile}")
 

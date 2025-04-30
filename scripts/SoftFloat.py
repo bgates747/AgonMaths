@@ -3,6 +3,9 @@ from cffi import FFI
 import struct
 import numpy as np
 import os
+import math
+import csv
+from pathlib import Path
 
 # ----------------------------
 # Pure Python Helpers
@@ -52,6 +55,12 @@ ffi.cdef("""
 
     // Pack sign, exponent and sig to a float16.
     float16_t softfloat_roundPackToF16(bool sign, int_fast16_t exp, uint_fast16_t sig);
+         
+    // Sine of an angle in radians
+    float16_t f16_sin(float16_t a);
+         
+    // Sine of an angle in radians CORDIC
+    float16_t f16_sin_cordic(float16_t a);
 
     // DEBUG: print the rounding mode
     void printRoundingModeInfo();
@@ -131,6 +140,40 @@ def f16_mul_python(a, b):
     a_bits = np.float16(a).view(np.uint16)
     b_bits = np.float16(b).view(np.uint16)
     res_bits = lib.f16_mul(a_bits, b_bits)
+    return float16_bits_to_float(res_bits)
+
+def f16_sin_softfloat(a_f16):
+    """
+    Computes the sine of a half-precision number (provided as a 16-bit integer)
+    using SoftFloat's f16_sin.
+    Returns the 16-bit integer result.
+    """
+    return lib.f16_sin(a_f16)
+
+def f16_sin_python(a):
+    """
+    Convenience function: compute the sine of a Python float interpreted as float16,
+    using SoftFloat's f16_sin, and return a Python float result.
+    """
+    a_bits = np.float16(a).view(np.uint16)
+    res_bits = lib.f16_sin(a_bits)
+    return float16_bits_to_float(res_bits)
+
+def f16_sin_cordic_softfloat(a_f16):
+    """
+    Computes the sine of a half-precision number (provided as a 16-bit integer)
+    using SoftFloat's f16_sin_cordic.
+    Returns the 16-bit integer result.
+    """
+    return lib.f16_sin_cordic(a_f16)
+
+def f16_sin_cordic_python(a):
+    """
+    Convenience function: compute the sine of a Python float interpreted as float16
+    using SoftFloat's f16_sin_cordic, and return a Python float result.
+    """
+    a_bits = np.float16(a).view(np.uint16)
+    res_bits = lib.f16_sin_cordic(a_bits)
     return float16_bits_to_float(res_bits)
 
 def f16_sqrt_softfloat(a_f16):
@@ -216,8 +259,83 @@ def parse_float16_input(x):
         raise TypeError(f"Unsupported type for input: {type(x)}")
 
 
+def test_f16_sin_circle():
+    output_path = Path("tests/f16_sin_test_detail.csv")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["deg", "radians", "radians_hex", "softfloat_result", "softfloat_hex", "numpy_result", "abs_error"])
+        for deg in range(0, 361, 1):
+            radians = math.radians(deg)
+            # Convert to float16 and bit pattern (uint16)
+            valA_f16 = np.float16(radians)
+            opA = valA_f16.view(np.uint16)
+            # SoftFloat sine result
+            result = f16_sin_softfloat(opA)
+            valS = np.uint16(result).view(np.float16)
+            # NumPy reference
+            valN = np.sin(radians).astype(np.float32)
+            # Absolute error
+            err = abs(float(valS) - float(valN))
+            writer.writerow([deg, float(valA_f16), f"0x{opA:04X}", float(valS), f"0x{result:04X}", float(valN), f"{err:.6e}"])
+
+
+def test_f16_sin_cordic_circle():
+    output_path = Path("tests/f16_sin_cordic_test_detail.csv")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["deg", "radians", "radians_hex", "softfloat_result", "softfloat_hex", "numpy_result", "abs_error"])
+        for deg in range(0, 361, 1):
+            radians = math.radians(deg)
+            # Convert to float16 and bit pattern (uint16)
+            valA_f16 = np.float16(radians)
+            opA = valA_f16.view(np.uint16)
+            # SoftFloat sine result
+            result = f16_sin_cordic_softfloat(opA)
+            valS = np.uint16(result).view(np.float16)
+            # NumPy reference
+            valN = np.sin(radians).astype(np.float32)
+            # Absolute error
+            err = abs(float(valS) - float(valN))
+            writer.writerow([deg, float(valA_f16), f"0x{opA:04X}", float(valS), f"0x{result:04X}", float(valN), f"{err:.6e}"])
+
 # Example usage
 if __name__ == "__main__":
+    test_f16_sin_circle()
+    test_f16_sin_cordic_circle()
+
+    # # Input as string literal (hex float16 bit pattern or decimal string)
+    # valA_str = 0
+
+    # # Convert to float16 bit pattern (uint16)
+    # opA = parse_float16_input(valA_str)
+
+    # print('; ----- DEBUG OUTPUT -----')
+
+    # # Perform the sine using SoftFloat
+    # result = f16_sin_softfloat(opA)
+
+    # # Convert to Python float
+    # valA_float = float16_bits_to_float(opA)
+    # valR_float = float16_bits_to_float(result)
+
+    # # Debug output: decimal first, then hex
+    # print(f';    sin({valA_float}) = {valR_float}')
+    # print(f';    sin(0x{opA:04X}) = 0x{result:04X}')
+
+    # # Assembly output: decimal first, then hex
+    # print(f'\n; ----- ASSEMBLY OUTPUT -----')
+    # print(f'    call printInline')
+    # print(f'    asciz "sin({valA_float}) = {valR_float}\\r\\n"')
+    # print(f'    call printInline')
+    # print(f'    asciz "sin(0x{opA:04X}) = 0x{result:04X}\\r\\n"')
+    # print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
+    # print(f'    call f16_sin')
+    # print(f'    PRINT_HL_HEX " assembly result"')
+    # print(f'    call printNewLine')
+
+
     # # Input as string literal (hex float16 bit pattern or decimal string)
     # valA_str = "0xFC00"
 
@@ -248,38 +366,36 @@ if __name__ == "__main__":
     # print(f'    PRINT_HL_HEX " assembly result"')
     # print(f'    call printNewLine')
 
+    # # Input as string literals (hex float16 bit patterns or decimal strings)
+    # valA_str = '0x0074da'
+    # valB_str = '0x00f4da'
 
+    # # Convert to float16 bit patterns (uint16)
+    # opA = parse_float16_input(valA_str)
+    # opB = parse_float16_input(valB_str)
 
-    # Input as string literals (hex float16 bit patterns or decimal strings)
-    valA_str = '0x0074da'
-    valB_str = '0x00f4da'
+    # print('; ----- DEBUG OUTPUT -----')
 
-    # Convert to float16 bit patterns (uint16)
-    opA = parse_float16_input(valA_str)
-    opB = parse_float16_input(valB_str)
+    # # Perform the subition using SoftFloat
+    # result = f16_add_softfloat(opA, opB)
 
-    print('; ----- DEBUG OUTPUT -----')
+    # # Convert result to Python float
+    # valA_float = float16_bits_to_float(opA)
+    # valB_float = float16_bits_to_float(opB)
+    # valR_float = float16_bits_to_float(result)
 
-    # Perform the subition using SoftFloat
-    result = f16_add_softfloat(opA, opB)
+    # # Debug output: decimal first, then hex
+    # print(f';    {valA_float} + {valB_float} = {valR_float}')
+    # print(f';    0x{opA:04X} + 0x{opB:04X} = 0x{result:04X}')
 
-    # Convert result to Python float
-    valA_float = float16_bits_to_float(opA)
-    valB_float = float16_bits_to_float(opB)
-    valR_float = float16_bits_to_float(result)
-
-    # Debug output: decimal first, then hex
-    print(f';    {valA_float} + {valB_float} = {valR_float}')
-    print(f';    0x{opA:04X} + 0x{opB:04X} = 0x{result:04X}')
-
-    # Assembly output: decimal first, then hex
-    print(f'\n; ----- ASSEMBLY OUTPUT -----')
-    print(f'    call printInline')
-    print(f'    asciz "{valA_float} + {valB_float} = {valR_float}\\r\\n"')
-    print(f'    call printInline')
-    print(f'    asciz "0x{opA:04X} + 0x{opB:04X} = 0x{result:04X}\\r\\n"')
-    print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
-    print(f'    ld de,0x{opB:04X} ; 0x{opB:04X}')
-    print(f'    call f16_add')
-    print(f'    PRINT_HL_HEX " assembly result"')
-    print(f'    call printNewLine')
+    # # Assembly output: decimal first, then hex
+    # print(f'\n; ----- ASSEMBLY OUTPUT -----')
+    # print(f'    call printInline')
+    # print(f'    asciz "{valA_float} + {valB_float} = {valR_float}\\r\\n"')
+    # print(f'    call printInline')
+    # print(f'    asciz "0x{opA:04X} + 0x{opB:04X} = 0x{result:04X}\\r\\n"')
+    # print(f'    ld hl,0x{opA:04X} ; 0x{opA:04X}')
+    # print(f'    ld de,0x{opB:04X} ; 0x{opB:04X}')
+    # print(f'    call f16_add')
+    # print(f'    PRINT_HL_HEX " assembly result"')
+    # print(f'    call printNewLine')

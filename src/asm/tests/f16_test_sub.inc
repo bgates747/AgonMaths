@@ -36,7 +36,6 @@ test_f16_sub:
     inc hl
     ld (errors),hl
 @next_record:
-; write results to file buffer
     ld de,(bytes_per_record)
     add iy,de; bump data pointer
     ld hl,(records)

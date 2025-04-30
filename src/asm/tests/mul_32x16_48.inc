@@ -51,7 +51,6 @@ test_mul_32x16_48:
     inc hl
     ld (errors),hl
 @next_record:
-; write results to file buffer
     ld de,(bytes_per_record)
     add iy,de; bump data pointer
     ld hl,(records)

@@ -1,55 +1,55 @@
 canonicalNaNF16: EQU 0x7E00
 
-str_inf: asciz " Inf"
-str_nan: asciz " NaN"
-str_zero: asciz " 0"
+str_inf:  asciz "   Inf"
+str_nan:  asciz "   NaN"
+str_zero: asciz "     0"
 
 str_numbers: db "zzzzzzzz"
 strBuff:      blkb 32,0
 
 ; 16-bit floating point globals
 ; A group
-uiA:         EQU 0
-sigA:        EQU uiA + 3
-signA:       EQU sigA + 3
-expA:        EQU signA + 1
+uiA:         EQU 0          ; 2 bytes
+sigA:        EQU uiA + 3    ; 2 bytes
+signA:       EQU sigA + 3   ; 1 byte
+expA:        EQU signA + 1  ; 1 byte
 
 ; B group
-uiB:         EQU expA + 2
-sigB:        EQU uiB + 3
-signB:       EQU sigB + 3
-expB:        EQU signB + 1
+uiB:         EQU expA + 2   ; 2 bytes
+sigB:        EQU uiB + 3    ; 2 bytes
+signB:       EQU sigB + 3   ; 1 byte
+expB:        EQU signB + 1  ; 1 byte
 
 ; X group
-sigX:        EQU expB + 2
-signX:       EQU sigX + 3
-expX:        EQU signX + 1
+sigX:        EQU expB + 2   ; 2 bytes
+signX:       EQU sigX + 3   ; 1 byte
+expX:        EQU signX + 1  ; 1 byte
 
 ; Y group
-sigY:        EQU expX + 2
-signY:       EQU sigY + 3
-expY:        EQU signY + 1
+sigY:        EQU expX + 2   ; 2 bytes
+signY:       EQU sigY + 3   ; 1 byte
+expY:        EQU signY + 1  ; 1 byte
 
 ; Z group
-uiZ:         EQU expY + 2
-sigZ:        EQU uiZ + 3
-signZ:       EQU sigZ + 3
-expZ:        EQU signZ + 1
+uiZ:         EQU expY + 2   ; 2 bytes
+sigZ:        EQU uiZ + 3    ; 2 bytes
+signZ:       EQU sigZ + 3   ; 1 byte
+expZ:        EQU signZ + 1  ; 1 byte
 
 ; Shared / Misc
-expDiff:     EQU expZ + 2
-shiftDist:   EQU expDiff + 1
-sigDiff:     EQU shiftDist + 1
-r0:          EQU sigDiff + 3
-rem:         EQU r0 + 3
+expDiff:     EQU expZ + 2      ; 1 byte
+shiftDist:   EQU expDiff + 1   ; 1 byte
+sigDiff:     EQU shiftDist + 1 ; 2 bytes
+r0:          EQU sigDiff + 3   ; 2 bytes
+rem:         EQU r0 + 3        ; 4 bytes
 
 ; 32-bit floating point globals
-sig32A:      EQU rem + 5
-sig32B:      EQU sig32A + 5
-sig32X:      EQU sig32B + 5
-sig32Y:      EQU sig32X + 5
-sig32Z:      EQU sig32Y + 5
-sig48Z:      EQU sig32Z + 5
+sig32A:      EQU rem + 5       ; 4 bytes
+sig32B:      EQU sig32A + 5    ; 4 bytes
+sig32X:      EQU sig32B + 5    ; 4 bytes
+sig32Y:      EQU sig32X + 5    ; 4 bytes
+sig32Z:      EQU sig32Y + 5    ; 4 bytes
+sig48Z:      EQU sig32Z + 5    ; 6 bytes
 
 ; Global variable table
 s_globals:
