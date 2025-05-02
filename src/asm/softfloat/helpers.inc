@@ -72,6 +72,55 @@ mul_16x16_32:
     ret
 ; end mul_16x16_32
 
+smul_16x16_32:
+; compute sign of product
+    ld a,h ; sign hl
+    and %10000000
+    xor d ; xor sign hl with sign de
+    and %10000000
+    or a ; set sign flag
+    push af ; store sign flag
+; get absolute value of hl
+    call hl_abs
+    jr z,@product_zero
+; get absolute value of de
+    ex de,hl
+    call hl_abs
+    ex de,hl
+    jr z,@product_zero
+; do the multiplication
+    call mul_16x16_32 ; hlde = product
+; adjust sign of result
+    pop af ; get sign flag
+    ret p ; product is positive, nothing to do
+; negate product
+    ld a,e
+    cpl
+    add a,1
+    ld e,a
+    ld a,d
+    cpl
+    adc a,0
+    ld d,a
+    ld a,l
+    cpl
+    adc a,0
+    ld l,a
+    ld a,h
+    cpl
+    adc a,0
+    ld h,a
+    ret
+@product_zero:
+    inc sp ; balance stack
+    inc sp
+    inc sp
+    xor a ; sets zero flag
+    ld hl,0
+    ld de,0
+    ret
+; end smul_16x16_32
+
 ; multiply 32 x 16 -> 48 bit product
 ; inputs: hlde = 32-bit multiplicand, bc = 16-bit multiplier
 ; outputs: hldebc = 48-bit product

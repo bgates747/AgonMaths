@@ -4,7 +4,7 @@
 scratch1: dw24 0 ;bit manipulation buffer 1
 scratch2: dw24 0 ;bit manipulation buffer 2
 
-; absolute value of hlu
+; absolute value of hlu (24-bit)
 ; returns: abs(hlu), flags set according to the incoming sign of hlu:
 ;         s1,z0,pv0,n1,c0 if hlu was negative
 ;         s0,z1,pv0,n1,c0 if hlu was zero
@@ -22,7 +22,7 @@ hlu_abs:
     pop af ; get back flags
     ret
 
-; flip the sign of hlu
+; flip the sign of hlu (24-bit)
 ; inputs: hlu
 ; returns: 0-hlu, flags set appropriately for the result:
 ;         s1,z0,pv0,n1,c1 if result is negative
@@ -35,6 +35,40 @@ neg_hlu:
     ld hl,0 ; clear hl
     xor a ; clear carry
     sbc hl,de ; 0-hlu = -hlu
+    pop de ; get de back
+    ret ; easy peasy
+
+; absolute value of hl (16-bit)
+; returns: abs(hl), flags set according to the incoming sign of hl:
+;         s1,z0,pv0,n1,c0 if hl was negative
+;         s0,z1,pv0,n1,c0 if hl was zero
+;         s0,z0,pv0,n1,c0 if hl was positive
+; destroys: a
+hl_abs:
+    add.s hl,de
+    or a
+    sbc.s hl,de 
+    jp m,@is_neg
+    ret ; hl is positive or zero so we're done
+@is_neg:
+    push af ; otherwise, save current flags for return
+    call neg_hl ; negate hl
+    pop af ; get back flags
+    ret
+
+; flip the sign of hl (16-bit)
+; inputs: hl
+; returns: 0-hl, flags set appropriately for the result:
+;         s1,z0,pv0,n1,c1 if result is negative
+;         s0,z1,pv0,n1,c0 if result is zero
+;         s0,z0,pv0,n1,c1 if result is positive
+; destroys a
+neg_hl:
+    push de ; save de
+    ex de,hl ; put hl into de
+    ld hl,0 ; clear hl
+    xor a ; clear carry
+    sbc.s hl,de ; 0-hl = -hl
     pop de ; get de back
     ret ; easy peasy
 

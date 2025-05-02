@@ -5,302 +5,174 @@
 #include "specialize.h"
 #include "softfloat.h"
 
-/*-------------------------------------------------------------------------
- * π constants in Q2.14 fixed-point
- *-------------------------------------------------------------------------*/
-#define Q14(x)  ((int32_t)((x)*16384.0 + 0.5))
-static const int32_t PI_OVER_2_Q14   = Q14(1.57079632679489661923);
-static const int32_t TWO_OVER_PI_Q14 = Q14(0.63661977236758134308);
+// #include "debug_print.h"
 
-/*-------------------------------------------------------------------------
- * 5th-order minimax for sin(y) on |y| ≤ π/4, coefficients in Q2.14
- *   sin y ≈ y + C3·y³ + C5·y⁵
- *-------------------------------------------------------------------------*/
-static const int16_t C3_Q14 = (int16_t)Q14(-0.1666665668f);
-static const int16_t C5_Q14 = (int16_t)Q14(+0.0083330251f);
-
-static inline int_fast32_t
-poly_sin_q14( int_fast32_t y_q14 )
-{
-    /* y_q14 is Q2.14 */
-    int_fast32_t y2 = (int_fast32_t)((int64_t)y_q14 * y_q14 >> 14);     /* y² Q2.14 */
-    int_fast32_t y3 = (int_fast32_t)((int64_t)y2     * y_q14 >> 14);    /* y³ Q2.14 */
-    int_fast32_t t3 = (int_fast32_t)((int64_t)C3_Q14 * y3     >> 14);    /* C3·y³ */
-    int_fast32_t y5 = (int_fast32_t)((int64_t)y3     * y2     >> 14);    /* y⁵ Q2.14 */
-    int_fast32_t t5 = (int_fast32_t)((int64_t)C5_Q14 * y5     >> 14);    /* C5·y⁵ */
-    return y_q14 + t3 + t5;                                             /* Q2.14 */
-}
-
-//----------------------------------------------------------------------
-// Convert float16 bits → Q2.14 fixed‐point (32‐bit signed)
-//    raw 16‐bit → sign, expA (unbiased), sigA
-//    x_Q14 = (1.frac)*2^14 * 2^(expA−15)
-//----------------------------------------------------------------------
-static inline int_fast32_t
-f16_to_q14( uint_fast16_t uiA )
-{
-    bool          neg  = signF16UI(uiA);
-    int_fast8_t   expA = (int_fast8_t)expF16UI(uiA) - 15;   // unbiased
-    uint_fast16_t sigA = fracF16UI(uiA);
-    // build 1.frac as integer, then shift left 4 to Q2.14
-    uint32_t mant = expF16UI(uiA) ? (0x400u | sigA) : sigA;
-    int_fast32_t val  = (int_fast32_t)(mant << 4);
-    // apply true exponent (expA − 15 already baked into expA)
-    if (expA > 0)    val <<= expA;
-    else if (expA < 0) val >>= -expA;
-    return neg ? -val : val;
-}
-
-//----------------------------------------------------------------------
-// Convert Q2.14 fixed‐point → float16 bits
-//    x_q14 = val * 2^14  (int‐scaled), want f16 ≈ x_q14/2^14
-//----------------------------------------------------------------------
-static inline uint_fast16_t
-q14_to_f16( int_fast32_t x_q14 )
-{
-    bool neg = x_q14 < 0;
-    if (neg) x_q14 = -x_q14;
-
-    // zero special‐case
-    if (x_q14 == 0) {
-        return packToF16UI( neg, 0, 0 );
-    }
-
-    // normalize so that 1.0 ≤ (x_norm/2^14) < 2.0
-    // i.e. x_norm ∈ [2^14, 2^15)
-    int shift = 0;
-    while (x_q14 < (1 << 14)) {
-        x_q14 <<= 1;
-        --shift;
-    }
-    while (x_q14 >= (1 << 15)) {
-        x_q14 >>= 1;
-        ++shift;
-    }
-
-    // now x_q14 = (1.frac) in Q2.14 form,
-    // fraction bits = (x_norm - 2^14) >> (14−10) = >>4
-    uint_fast16_t frac = (uint_fast16_t)((x_q14 - (1 << 14)) >> 4) & 0x03FFu;
-
-    // exponent = unbiased E + bias(15),
-    // where E = shift
-    uint_fast8_t exp = (uint_fast8_t)(15 + shift);
-
-    return packToF16UI( neg, exp, frac );
-}
-
-
-/*-------------------------------------------------------------------------
- * f16_sin
- *
- * Variables (from your scratch list):
- *
- *  uiA    : raw 16-bit half-precision input (bits)
- *  signA  : sign bit (0 = +, 1 = −)
- *  expA   : exponent field (5 bits, biased by 15)
- *  sigA   : fraction field (10 bits, no implicit leading 1)
- *
- *  expDiff: quadrant (0–3) from range reduction
- *  rem    : remainder in Q2.14 (after subtracting k·π/2)
- *
- *  sig32A : input x in Q2.14 (32-bit signed)
- *  sig32Y : reduced argument y in Q2.14
- *  sig32Z : polynomial result sin(y) in Q2.14
- *
- *  uiZ    : raw 16-bit half-precision output (bits)
- *-------------------------------------------------------------------------*/
-float16_t f16_sin( float16_t a )
-{
-    union ui16_f16 uA, uZ;
-    uint_fast16_t uiA, uiZ;
-    bool          signA;
-    int_fast8_t   expA, expDiff;
-    uint_fast16_t sigA;
-    int_fast32_t  sig32A, sig32Y, sig32Z;
-    int_fast32_t  rem;
-
-    /*------------------------------------------------------------------------
-     * unpack input
-     *------------------------------------------------------------------------*/
-    uA.f   = a;
-    uiA    = uA.ui;
-    signA  = signF16UI(uiA);
-    expA   = (int_fast8_t)expF16UI(uiA);
-    sigA   = fracF16UI(uiA);
-
-    /*------------------------------------------------------------------------
-     * handle zeros
-     *------------------------------------------------------------------------*/
-    if (expA == 0 && sigA == 0) {
-        /* preserve signed zero */
-        return a;
-    }
-    /*------------------------------------------------------------------------
-     * handle NaN/Inf
-     *------------------------------------------------------------------------*/
-    if (expA == 0x1F) {
-        if (sigA) {
-            uiZ = softfloat_propagateNaNF16UI(uiA, 0);
-        } else {
-            softfloat_raiseFlags( softfloat_flag_invalid );
-            uiZ = defaultNaNF16UI;
-        }
-        goto uiZ_label;
-    }
-
-    /*------------------------------------------------------------------------
-     * 1) Convert input → Q2.14
-     *------------------------------------------------------------------------*/
-    sig32A = f16_to_q14(uiA);
-
-    /*------------------------------------------------------------------------
-     * 2) Range-reduce x → y in [−π/4,π/4]
-     *    k = round(x * 2/π)
-     *    expDiff = k & 3
-     *    rem      = x_q14 − k*(π/2)_Q14
-     *------------------------------------------------------------------------*/
-    {
-        int_fast32_t prod = (int_fast32_t)((int64_t)sig32A * TWO_OVER_PI_Q14 >> 14);
-        int_fast8_t  k    = (prod + (prod>=0 ? 0x2000 : -0x2000)) >> 14;
-        expDiff        = k & 3;
-        rem            = sig32A - (int_fast32_t)(k * PI_OVER_2_Q14);
-        sig32Y         = rem;
-    }
-
-    /*------------------------------------------------------------------------
-     * 3) Evaluate sin or cos via the same poly
-     *------------------------------------------------------------------------*/
-    if ((expDiff & 1) == 0) {
-        /* quadrants 0 or 2: direct sine */
-        sig32Z = poly_sin_q14(sig32Y);
-    } else {
-        /* quadrants 1 or 3: cosine = sin(π/2 − |y|) */
-        int_fast32_t yAbs = sig32Y >= 0 ? sig32Y : -sig32Y;
-        sig32Z = poly_sin_q14(PI_OVER_2_Q14 - yAbs);
-    }
-
-    /*------------------------------------------------------------------------
-     * 4) Flip sign for quadrants 2 and 3
-     *------------------------------------------------------------------------*/
-    if (expDiff >= 2) sig32Z = -sig32Z;
-
-    /*------------------------------------------------------------------------
-     * 5) Pack back → half-precision bits
-     *------------------------------------------------------------------------*/
-    uiZ = q14_to_f16(sig32Z);
-
- uiZ_label:
-    uZ.ui = uiZ;
-    return uZ.f;
-}
-
-
-/*-------------------------------------------------------------------------
- * CORDIC constants in Q2.14 fixed-point
- *-------------------------------------------------------------------------*/
-static const int16_t cordic_atan_q14[16] = {
-    (int16_t)Q14(0.7853981633974483f),  /* atan(1)   = π/4 */
-    (int16_t)Q14(0.4636476090008061f),  /* atan(0.5) */
-    (int16_t)Q14(0.24497866312686414f), /* 2⁻²      */
-    (int16_t)Q14(0.12435499454676144f), /* 2⁻³      */
-    (int16_t)Q14(0.06241880999595735f), /* 2⁻⁴      */
-    (int16_t)Q14(0.031239833430268277f),/* 2⁻⁵      */
-    (int16_t)Q14(0.015623728620476831f),/* 2⁻⁶      */
-    (int16_t)Q14(0.007812341060101111f),/* 2⁻⁷      */
-    (int16_t)Q14(0.0039062301319669718f),/*2⁻⁸     */
-    (int16_t)Q14(0.0019531225164788188f),/*2⁻⁹     */
-    (int16_t)Q14(0.0009765621895593195f),/*2⁻¹⁰    */
-    (int16_t)Q14(0.0004882812111948983f),/*2⁻¹¹    */
-    (int16_t)Q14(0.00024414062014936177f),/*2⁻¹²   */
-    (int16_t)Q14(0.00012207031189367021f),/*2⁻¹³  */
-    (int16_t)Q14(0.00006103515617420877f),/*2⁻¹⁴  */
-    (int16_t)Q14(0.000030517578115526096f)/*2⁻¹⁵  */
+static const uint16_t sin_lut_f16[256] = {
+    0x0000, 0x2648, 0x2A48, 0x2CB5, 0x2E46, 0x2FD6, 0x30B2, 0x3179,
+    0x323E, 0x3303, 0x33C6, 0x3444, 0x34A5, 0x3505, 0x3564, 0x35C2,
+    0x361F, 0x367C, 0x36D7, 0x3732, 0x378B, 0x37E3, 0x381D, 0x3848,
+    0x3872, 0x389B, 0x38C4, 0x38EC, 0x3913, 0x393A, 0x395F, 0x3984,
+    0x39A8, 0x39CB, 0x39ED, 0x3A0F, 0x3A2F, 0x3A4F, 0x3A6D, 0x3A8A,
+    0x3AA7, 0x3AC2, 0x3ADD, 0x3AF6, 0x3B0E, 0x3B25, 0x3B3B, 0x3B50,
+    0x3B64, 0x3B77, 0x3B88, 0x3B99, 0x3BA8, 0x3BB6, 0x3BC3, 0x3BCE,
+    0x3BD9, 0x3BE2, 0x3BEA, 0x3BF1, 0x3BF6, 0x3BFA, 0x3BFE, 0x3BFF,
+    0x3C00, 0x3BFF, 0x3BFE, 0x3BFA, 0x3BF6, 0x3BF1, 0x3BEA, 0x3BE2,
+    0x3BD9, 0x3BCE, 0x3BC3, 0x3BB6, 0x3BA8, 0x3B99, 0x3B88, 0x3B77,
+    0x3B64, 0x3B50, 0x3B3B, 0x3B25, 0x3B0E, 0x3AF6, 0x3ADD, 0x3AC2,
+    0x3AA7, 0x3A8A, 0x3A6D, 0x3A4F, 0x3A2F, 0x3A0F, 0x39ED, 0x39CB,
+    0x39A8, 0x3984, 0x395F, 0x393A, 0x3913, 0x38EC, 0x38C4, 0x389B,
+    0x3872, 0x3848, 0x381D, 0x37E3, 0x378B, 0x3732, 0x36D7, 0x367C,
+    0x361F, 0x35C2, 0x3564, 0x3505, 0x34A5, 0x3444, 0x33C6, 0x3303,
+    0x323E, 0x3179, 0x30B2, 0x2FD6, 0x2E46, 0x2CB5, 0x2A48, 0x2648,
+    0x0000, 0xA648, 0xAA48, 0xACB5, 0xAE46, 0xAFD6, 0xB0B2, 0xB179,
+    0xB23E, 0xB303, 0xB3C6, 0xB444, 0xB4A5, 0xB505, 0xB564, 0xB5C2,
+    0xB61F, 0xB67C, 0xB6D7, 0xB732, 0xB78B, 0xB7E3, 0xB81D, 0xB848,
+    0xB872, 0xB89B, 0xB8C4, 0xB8EC, 0xB913, 0xB93A, 0xB95F, 0xB984,
+    0xB9A8, 0xB9CB, 0xB9ED, 0xBA0F, 0xBA2F, 0xBA4F, 0xBA6D, 0xBA8A,
+    0xBAA7, 0xBAC2, 0xBADD, 0xBAF6, 0xBB0E, 0xBB25, 0xBB3B, 0xBB50,
+    0xBB64, 0xBB77, 0xBB88, 0xBB99, 0xBBA8, 0xBBB6, 0xBBC3, 0xBBCE,
+    0xBBD9, 0xBBE2, 0xBBEA, 0xBBF1, 0xBBF6, 0xBBFA, 0xBBFE, 0xBBFF,
+    0xBC00, 0xBBFF, 0xBBFE, 0xBBFA, 0xBBF6, 0xBBF1, 0xBBEA, 0xBBE2,
+    0xBBD9, 0xBBCE, 0xBBC3, 0xBBB6, 0xBBA8, 0xBB99, 0xBB88, 0xBB77,
+    0xBB64, 0xBB50, 0xBB3B, 0xBB25, 0xBB0E, 0xBAF6, 0xBADD, 0xBAC2,
+    0xBAA7, 0xBA8A, 0xBA6D, 0xBA4F, 0xBA2F, 0xBA0F, 0xB9ED, 0xB9CB,
+    0xB9A8, 0xB984, 0xB95F, 0xB93A, 0xB913, 0xB8EC, 0xB8C4, 0xB89B,
+    0xB872, 0xB848, 0xB81D, 0xB7E3, 0xB78B, 0xB732, 0xB6D7, 0xB67C,
+    0xB61F, 0xB5C2, 0xB564, 0xB505, 0xB4A5, 0xB444, 0xB3C6, 0xB303,
+    0xB23E, 0xB179, 0xB0B2, 0xAFD6, 0xAE46, 0xACB5, 0xAA48, 0xA648
 };
 
-//----------------------------------------------------------------------
-// rempio2_q14:  Range‐reduce x_q14 into [–π/4, +π/4] (Q2.14 fixed‐point)
-//   Returns k&3 in [0..3] and writes the remainder into *rem_q14.
-//----------------------------------------------------------------------
-static inline uint_fast8_t rempio2_q14(int_fast32_t x_q14, int_fast32_t *rem_q14)
+static const uint16_t diff_lut_f16[256] = {
+    0x2648, 0x2648, 0x2644, 0x2644, 0x2640, 0x2638, 0x2638, 0x2628,
+    0x2628, 0x2618, 0x2610, 0x2610, 0x2600, 0x25F0, 0x25E0, 0x25D0,
+    0x25D0, 0x25B0, 0x25B0, 0x2590, 0x2580, 0x2570, 0x2560, 0x2540,
+    0x2520, 0x2520, 0x2500, 0x24E0, 0x24E0, 0x24A0, 0x24A0, 0x2480,
+    0x2460, 0x2440, 0x2440, 0x2400, 0x2400, 0x2380, 0x2340, 0x2340,
+    0x22C0, 0x22C0, 0x2240, 0x2200, 0x21C0, 0x2180, 0x2140, 0x2100,
+    0x20C0, 0x2040, 0x2040, 0x1F80, 0x1F00, 0x1E80, 0x1D80, 0x1D80,
+    0x1C80, 0x1C00, 0x1B00, 0x1900, 0x1800, 0x1800, 0x1000, 0x1000,
+    0x9000, 0x9000, 0x9800, 0x9800, 0x9900, 0x9B00, 0x9C00, 0x9C80,
+    0x9D80, 0x9D80, 0x9E80, 0x9F00, 0x9F80, 0xA040, 0xA040, 0xA0C0,
+    0xA100, 0xA140, 0xA180, 0xA1C0, 0xA200, 0xA240, 0xA2C0, 0xA2C0,
+    0xA340, 0xA340, 0xA380, 0xA400, 0xA400, 0xA440, 0xA440, 0xA460,
+    0xA480, 0xA4A0, 0xA4A0, 0xA4E0, 0xA4E0, 0xA500, 0xA520, 0xA520,
+    0xA540, 0xA560, 0xA570, 0xA580, 0xA590, 0xA5B0, 0xA5B0, 0xA5D0,
+    0xA5D0, 0xA5E0, 0xA5F0, 0xA600, 0xA610, 0xA610, 0xA618, 0xA628,
+    0xA628, 0xA638, 0xA638, 0xA640, 0xA644, 0xA644, 0xA648, 0xA648,
+    0xA648, 0xA648, 0xA644, 0xA644, 0xA640, 0xA638, 0xA638, 0xA628,
+    0xA628, 0xA618, 0xA610, 0xA610, 0xA600, 0xA5F0, 0xA5E0, 0xA5D0,
+    0xA5D0, 0xA5B0, 0xA5B0, 0xA590, 0xA580, 0xA570, 0xA560, 0xA540,
+    0xA520, 0xA520, 0xA500, 0xA4E0, 0xA4E0, 0xA4A0, 0xA4A0, 0xA480,
+    0xA460, 0xA440, 0xA440, 0xA400, 0xA400, 0xA380, 0xA340, 0xA340,
+    0xA2C0, 0xA2C0, 0xA240, 0xA200, 0xA1C0, 0xA180, 0xA140, 0xA100,
+    0xA0C0, 0xA040, 0xA040, 0x9F80, 0x9F00, 0x9E80, 0x9D80, 0x9D80,
+    0x9C80, 0x9C00, 0x9B00, 0x9900, 0x9800, 0x9800, 0x9000, 0x9000,
+    0x1000, 0x1000, 0x1800, 0x1800, 0x1900, 0x1B00, 0x1C00, 0x1C80,
+    0x1D80, 0x1D80, 0x1E80, 0x1F00, 0x1F80, 0x2040, 0x2040, 0x20C0,
+    0x2100, 0x2140, 0x2180, 0x21C0, 0x2200, 0x2240, 0x22C0, 0x22C0,
+    0x2340, 0x2340, 0x2380, 0x2400, 0x2400, 0x2440, 0x2440, 0x2460,
+    0x2480, 0x24A0, 0x24A0, 0x24E0, 0x24E0, 0x2500, 0x2520, 0x2520,
+    0x2540, 0x2560, 0x2570, 0x2580, 0x2590, 0x25B0, 0x25B0, 0x25D0,
+    0x25D0, 0x25E0, 0x25F0, 0x2600, 0x2610, 0x2610, 0x2618, 0x2628,
+    0x2628, 0x2638, 0x2638, 0x2640, 0x2644, 0x2644, 0x2648, 0x2648
+};
+
+static const uint16_t frac_lut_f16[256] = {
+    0x0000, 0x1C00, 0x2000, 0x2200, 0x2400, 0x2500, 0x2600, 0x2700,
+    0x2800, 0x2880, 0x2900, 0x2980, 0x2A00, 0x2A80, 0x2B00, 0x2B80,
+    0x2C00, 0x2C40, 0x2C80, 0x2CC0, 0x2D00, 0x2D40, 0x2D80, 0x2DC0,
+    0x2E00, 0x2E40, 0x2E80, 0x2EC0, 0x2F00, 0x2F40, 0x2F80, 0x2FC0,
+    0x3000, 0x3020, 0x3040, 0x3060, 0x3080, 0x30A0, 0x30C0, 0x30E0,
+    0x3100, 0x3120, 0x3140, 0x3160, 0x3180, 0x31A0, 0x31C0, 0x31E0,
+    0x3200, 0x3220, 0x3240, 0x3260, 0x3280, 0x32A0, 0x32C0, 0x32E0,
+    0x3300, 0x3320, 0x3340, 0x3360, 0x3380, 0x33A0, 0x33C0, 0x33E0,
+    0x3400, 0x3410, 0x3420, 0x3430, 0x3440, 0x3450, 0x3460, 0x3470,
+    0x3480, 0x3490, 0x34A0, 0x34B0, 0x34C0, 0x34D0, 0x34E0, 0x34F0,
+    0x3500, 0x3510, 0x3520, 0x3530, 0x3540, 0x3550, 0x3560, 0x3570,
+    0x3580, 0x3590, 0x35A0, 0x35B0, 0x35C0, 0x35D0, 0x35E0, 0x35F0,
+    0x3600, 0x3610, 0x3620, 0x3630, 0x3640, 0x3650, 0x3660, 0x3670,
+    0x3680, 0x3690, 0x36A0, 0x36B0, 0x36C0, 0x36D0, 0x36E0, 0x36F0,
+    0x3700, 0x3710, 0x3720, 0x3730, 0x3740, 0x3750, 0x3760, 0x3770,
+    0x3780, 0x3790, 0x37A0, 0x37B0, 0x37C0, 0x37D0, 0x37E0, 0x37F0,
+    0x3800, 0x3808, 0x3810, 0x3818, 0x3820, 0x3828, 0x3830, 0x3838,
+    0x3840, 0x3848, 0x3850, 0x3858, 0x3860, 0x3868, 0x3870, 0x3878,
+    0x3880, 0x3888, 0x3890, 0x3898, 0x38A0, 0x38A8, 0x38B0, 0x38B8,
+    0x38C0, 0x38C8, 0x38D0, 0x38D8, 0x38E0, 0x38E8, 0x38F0, 0x38F8,
+    0x3900, 0x3908, 0x3910, 0x3918, 0x3920, 0x3928, 0x3930, 0x3938,
+    0x3940, 0x3948, 0x3950, 0x3958, 0x3960, 0x3968, 0x3970, 0x3978,
+    0x3980, 0x3988, 0x3990, 0x3998, 0x39A0, 0x39A8, 0x39B0, 0x39B8,
+    0x39C0, 0x39C8, 0x39D0, 0x39D8, 0x39E0, 0x39E8, 0x39F0, 0x39F8,
+    0x3A00, 0x3A08, 0x3A10, 0x3A18, 0x3A20, 0x3A28, 0x3A30, 0x3A38,
+    0x3A40, 0x3A48, 0x3A50, 0x3A58, 0x3A60, 0x3A68, 0x3A70, 0x3A78,
+    0x3A80, 0x3A88, 0x3A90, 0x3A98, 0x3AA0, 0x3AA8, 0x3AB0, 0x3AB8,
+    0x3AC0, 0x3AC8, 0x3AD0, 0x3AD8, 0x3AE0, 0x3AE8, 0x3AF0, 0x3AF8,
+    0x3B00, 0x3B08, 0x3B10, 0x3B18, 0x3B20, 0x3B28, 0x3B30, 0x3B38,
+    0x3B40, 0x3B48, 0x3B50, 0x3B58, 0x3B60, 0x3B68, 0x3B70, 0x3B78,
+    0x3B80, 0x3B88, 0x3B90, 0x3B98, 0x3BA0, 0x3BA8, 0x3BB0, 0x3BB8,
+    0x3BC0, 0x3BC8, 0x3BD0, 0x3BD8, 0x3BE0, 0x3BE8, 0x3BF0, 0x3BF8
+};
+
+/*----------------------------------------------------------------------------
+| f16_sin
+|   Input  : uint16_t angle8_8  (8.8 fixed-point, 256 units = full circle)
+|   Output : float16_t
+*----------------------------------------------------------------------------*/
+float16_t f16_sin( uint16_t angle8_8 )
 {
-    // prod = x * (2/π) in Q2.14
-    int_fast32_t prod = (int_fast32_t)((int64_t)x_q14 * TWO_OVER_PI_Q14 >> 14);
-    // k = round(prod) to nearest integer
-    int_fast8_t  k    = (prod + (prod >= 0 ? 0x2000 : -0x2000)) >> 14;
-    // remainder = x - k*(π/2)
-    *rem_q14 = x_q14 - (int_fast32_t)(k * PI_OVER_2_Q14);
-    return (uint_fast8_t)(k & 3);
-}
+    /*---------------------- A group ----------------------*/
+    uint_fast16_t uiA;      // LUT index
+    uint_fast16_t sigA;     // fraction 0..255
 
-/* 1/K ≈ 0.607252935; in Q2.14 that’s ~9956 decimal */
-#define CORDIC_KINV_Q14  ((int_fast32_t)Q14(0.6072529350088814f))
+    /*---------------------- X group ----------------------*/
+    union ui16_f16 uX;      // for diff lookup
 
-float16_t f16_sin_cordic( float16_t a )
-{
-    union ui16_f16 uA, uZ;
-    uint_fast16_t uiA, uiZ;
-    bool          signA;
-    int_fast8_t   expA, expDiff;
-    uint_fast16_t sigA;
-    int_fast32_t  rem, sig32X, sig32Y;
-    int           i;
+    /*---------------------- Y group ----------------------*/
+    union ui16_f16 uY;      // for base‐value lookup
 
-    /*— 1) unpack input —*/
-    uA.f   = a;
-    uiA    = uA.ui;
-    signA  = signF16UI(uiA);
-    expA   = (int_fast8_t)expF16UI(uiA);
-    sigA   = fracF16UI(uiA);
+    /*---------------------- Z group ----------------------*/
+    union ui16_f16 uZ;      // for frac lookup + result pack
 
-    /*— 2) handle ±0 —*/
-    if (expA == 0 && sigA == 0) {
-        return a;
-    }
-    /*— 3) handle NaN/Inf —*/
-    if (expA == 0x1F) {
-        if (sigA) {
-            uiZ = softfloat_propagateNaNF16UI(uiA, 0);
-        } else {
-            softfloat_raiseFlags( softfloat_flag_invalid );
-            uiZ = defaultNaNF16UI;
-        }
-        goto uiZ_label;
-    }
+    float16_t y0, d0, f0, t0;
 
-    /*— 4) range-reduce: float16 → Q2.14 → rem + quadrant (expDiff) —*/
-    {
-        int_fast32_t x_q14 = f16_to_q14(uiA);
-        expDiff = rempio2_q14(x_q14, &rem);  /* expDiff ∈ 0…3, rem ∈ [−π/4,π/4] */
-    }
+    /*------------------------------------------------------------------------
+    * Split 8.8 into index + fractional part
+    *------------------------------------------------------------------------*/
+    uiA  = angle8_8 >> 8;        // 0..255
+    sigA = angle8_8 & 0xFF;      // 0..255
+    // debug_print(sigA, "sigA = angle8_8 & 0xFF" );
+    // debug_print(uiA, "uiA = angle8_8 >> 8" );
 
-    /*— 5) init CORDIC vector at (1/K, 0) —*/
-    sig32X = CORDIC_KINV_Q14;
-    sig32Y = 0;
+    /*------------------------------------------------------------------------
+    * Fetch difference: d0 = sin[i+1] – sin[i]
+    *------------------------------------------------------------------------*/
+    uX.ui = diff_lut_f16[ uiA ];
+    d0    = uX.f;
+    // debug_print(d0, "d0 = diff_lut_f16[ uiA ]" );
 
-    /*— 6) perform 16 CORDIC rotations on rem —*/
-    for (i = 0; i < 16; i++) {
-        int_fast32_t dx = sig32X >> i;
-        int_fast32_t dy = sig32Y >> i;
-        if (rem >= 0) {
-            sig32X -= dy;
-            sig32Y += dx;
-            rem      -= cordic_atan_q14[i];
-        } else {
-            sig32X += dy;
-            sig32Y -= dx;
-            rem      += cordic_atan_q14[i];
-        }
-    }
+    /*------------------------------------------------------------------------
+    * Fetch fraction: f0 = sigA/256.0 in float16
+    *------------------------------------------------------------------------*/
+    uZ.ui = frac_lut_f16[ sigA ];
+    f0    = uZ.f;
+    // debug_print(f0, "f0 = frac_lut_f16[ sigA ]" );
 
-    /*— 7) dispatch sine vs. cosine by quadrant, fold sign —*/
-    switch (expDiff & 3) {
-      case 0: uiZ = q14_to_f16( +sig32Y ); break;  /* sin(rem)       */
-      case 1: uiZ = q14_to_f16( +sig32X ); break;  /* sin(π/2+rem)=cos(rem) */
-      case 2: uiZ = q14_to_f16( -sig32Y ); break;  /* sin(π+rem)=−sin(rem)   */
-      default:uiZ = q14_to_f16( -sig32X ); break;  /* sin(3π/2+rem)=−cos(rem)*/
-    }
+    /*------------------------------------------------------------------------
+    * Interpolate: t0 = d0 * f0
+    *------------------------------------------------------------------------*/
+    t0 = f16_mul( d0, f0 );
+    // debug_print(t0, "t0 = d0 * f0" );
 
- uiZ_label:
-    uZ.ui = uiZ;
+    /*------------------------------------------------------------------------
+    * Fetch base sine value: y0 = sin_lut_f16[uiA]
+    *------------------------------------------------------------------------*/
+    uY.ui = sin_lut_f16[ uiA ];
+    y0   = uY.f;
+    // debug_print(y0, "y0 = sin_lut_f16[ uiA ]" );
+
+    /*------------------------------------------------------------------------
+    * Result: y0 + t0
+    *------------------------------------------------------------------------*/
+    uZ.f = f16_add( y0, t0 );
+    // debug_print(uZ.f, "uZ.f = f16_add( y0, t0 )" );
     return uZ.f;
 }

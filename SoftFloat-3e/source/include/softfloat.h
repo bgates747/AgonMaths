@@ -160,6 +160,8 @@ float16_t f16_mul( float16_t, float16_t );
 float16_t f16_mulAdd( float16_t, float16_t, float16_t );
 float16_t f16_div( float16_t, float16_t );
 float16_t f16_rem( float16_t, float16_t );
+float16_t f16_cos( uint16_t angle8_8 );
+float16_t f16_sin( uint16_t angle8_8 );
 float16_t f16_sqrt( float16_t );
 bool f16_eq( float16_t, float16_t );
 bool f16_le( float16_t, float16_t );

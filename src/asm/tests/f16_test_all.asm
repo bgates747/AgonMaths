@@ -50,6 +50,8 @@ exit:
     include "../softfloat/f16_div.inc"
     include "../softfloat/f16_mul.inc"
     include "../softfloat/f16_print.inc"
+    include "../softfloat/f16_cos.inc"
+    include "../softfloat/f16_sin.inc"
     include "../softfloat/f16_sqrt.inc"
     include "../softfloat/f16_sub.inc"
     include "../softfloat/s_addMagsF16.inc"
@@ -62,36 +64,22 @@ exit:
     include "f16_test_div.inc"
     include "f16_test_mul.inc"
     include "f16_test_sub.inc"
+    include "f16_test_cos.inc"
+    include "f16_test_sin.inc"
     include "f16_test_sqrt.inc"
     include "f16_test_print.inc"
-    include "mul_32x16_48.inc"
+    include "smul_16_32.inc"
+
 main:
-
-    ; ld hl,0x5800
-    ; call f16_print
-    ; call printString
-    ; call printNewLine
-
-    ; ld hl,0x5801
-    ; call f16_print
-    ; call printString
-    ; call printNewLine
-
-    ; ld hl,0x5800
-    ; call f16_print
-    ; call printString
-    ; call printNewLine
-
-
-    ; ret
-
-    ; call test_f16_add
-    ; call test_f16_sub
-    ; call test_f16_mul
-    ; call test_f16_div
-    ; call test_f16_sqrt
+    call test_f16_add
+    call test_f16_sub
+    call test_f16_mul
+    call test_f16_div
+    call test_f16_cos
+    call test_f16_sin
+    call test_f16_sqrt
     call test_f16_print
-    ; call test_mul_32x16_48
+    call test_smul_16_32
 
     ret
 

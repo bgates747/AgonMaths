@@ -106,6 +106,5 @@ main:
     jp test_complete
 
 @test_filename: asciz "../tests/mul_16x16_32.bin"
-@test_filename: asciz "../tests/mul_16x16_32.bin"
 
     include "../include/files.inc"

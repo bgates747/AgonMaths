@@ -21,20 +21,26 @@ exit:
     ld hl,0
     ret
 
+    ; Internals and helpers
     include "globals.inc"
     include "helpers.inc"
     include "internals.inc"
     include "primitives.inc"
-    include "f16_add.inc"
-    include "f16_div.inc"
-    include "f16_mul.inc"
-    include "f16_sqrt.inc"
-    include "f16_sub.inc"
     include "s_addMagsF16.inc"
     include "s_normSubnormalF16Sig.inc"
     include "s_roundPackToF16.inc"
     include "s_shiftRightJam32.inc"
     include "s_subMagsF16.inc"
+
+    ; Callable functions
+    include "f16_add.inc"
+    include "f16_cos.inc"
+    include "f16_div.inc"
+    include "f16_mul.inc"
+    include "f16_print.inc"
+    include "f16_sin.inc"
+    include "f16_sqrt.inc"
+    include "f16_sub.inc"
 
 main:
 ; your code goes hereish

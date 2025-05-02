@@ -195,6 +195,7 @@ OBJS_OTHERS = \
   f16_mulAdd$(OBJ) \
   f16_div$(OBJ) \
   f16_rem$(OBJ) \
+  f16_cos$(OBJ) \
   f16_sin$(OBJ) \
   f16_sqrt$(OBJ) \
   f16_eq$(OBJ) \

@@ -2,6 +2,7 @@
     "files.associations": {
         "*.asm": "asm-collection",
         "*.inc": "asm-collection",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "cstdint": "c"
     }
 }
