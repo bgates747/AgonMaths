@@ -3,6 +3,8 @@
         "*.asm": "asm-collection",
         "*.inc": "asm-collection",
         "cmath": "cpp",
-        "cstdint": "c"
+        "cstdint": "c",
+        "debug_print.h": "c",
+        "compare": "c"
     }
 }

@@ -54,6 +54,7 @@ exit:
     include "../softfloat/f16_sin.inc"
     include "../softfloat/f16_sqrt.inc"
     include "../softfloat/f16_sub.inc"
+    include "../softfloat/ui16_to_f16.inc"
     include "../softfloat/s_addMagsF16.inc"
     include "../softfloat/s_normSubnormalF16Sig.inc"
     include "../softfloat/s_roundPackToF16.inc"
@@ -69,17 +70,58 @@ exit:
     include "f16_test_sqrt.inc"
     include "f16_test_print.inc"
     include "smul_16_32.inc"
+    include "f16_test_ui16_to_f16.inc"
 
 main:
-    call test_f16_add
-    call test_f16_sub
-    call test_f16_mul
-    call test_f16_div
-    call test_f16_cos
-    call test_f16_sin
-    call test_f16_sqrt
-    call test_f16_print
-    call test_smul_16_32
+    ; ld hl,0x4009 ; significand
+    ; ld b,0x1d ; exponent
+    ; ld c,0 ; sign
+    ; call softfloat_roundPackToF16
+    ; PRINT_HL_HEX "f16 hex"
+    ; PRINT_HL_F16 "f16 dec"
+    ; call printNewLine
+    ; ret
+
+    ; ld hl,0x8011
+    ; call printDec
+    ; call printNewLine
+    ; call ui16_to_f16
+    ; PRINT_HL_HEX "f16 hex"
+    ; PRINT_HL_F16 "f16 dec"
+    ; call printNewLine
+    ; ret
+
+    ; ld hl,8
+    ; call ui16_to_f16
+    ; call f16_print
+    ; call printString
+    ; call printNewLine
+
+    ; ld hl,65504
+    ; call ui16_to_f16
+    ; call f16_print
+    ; call printString
+    ; call printNewLine
+
+    ; ld hl,65505
+    ; call ui16_to_f16
+    ; call f16_print
+    ; call printString
+    ; call printNewLine
+
+    ; ret
+
+
+    ; call test_f16_add
+    ; call test_f16_sub
+    ; call test_f16_mul
+    ; call test_f16_div
+    ; call test_f16_cos
+    ; call test_f16_sin
+    ; call test_f16_sqrt
+    ; call test_f16_print
+    ; call test_smul_16_32
+    call test_ui16_to_f16
 
     ret
 

@@ -61,6 +61,18 @@ ffi.cdef("""
          
     // Sine of an angle in degrees256 8.8 fixed point.
     float16_t f16_sin( uint16_t angle8_8 );
+         
+    // Convert a signed 16-bit integer to a float16 value.
+    float16_t i16_to_f16(int16_t a);
+
+    // Convert a signed 32-bit integer to a float16 value.
+    float16_t i32_to_f16(int32_t a);
+
+    // Convert an unsigned 16-bit integer to a float16 value.
+    float16_t ui16_to_f16(uint16_t a);
+
+    // Convert an unsigned 32-bit integer to a float16 value.
+    float16_t ui32_to_f16(uint32_t a);
 
     // DEBUG: print the rounding mode
     void printRoundingModeInfo();
@@ -219,6 +231,75 @@ def f16_to_f32_softfloat(a_f16):
     bits32 = lib.f16_to_f32(a_f16)
     return struct.unpack('<f', struct.pack('<I', bits32))[0]
 
+def i16_to_f16_softfloat(a_i16):
+    """
+    Uses SoftFloat's i16_to_f16 to convert a signed 16-bit integer
+    into a 16-bit float (returned as a Python float).
+    """
+    return lib.i16_to_f16(a_i16)
+
+def i16_to_f16_python(a_i16):
+    """
+    Convenience function: convert a signed 16-bit integer
+    into a 16-bit float using SoftFloat's i16_to_f16, 
+    and return a Python float result.
+    """
+    a_bits = np.int16(a_i16).view(np.uint16)
+    res_bits = lib.i16_to_f16(a_bits)
+    return float16_bits_to_float(res_bits)
+
+def i32_to_f16_softfloat(a_i32):
+    """
+    Uses SoftFloat's i32_to_f16 to convert a signed 32-bit integer
+    into a 16-bit float (returned as a Python float).
+    """
+    return lib.i32_to_f16(a_i32)
+
+def i32_to_f16_python(a_i32):
+    """
+    Convenience function: convert a signed 32-bit integer
+    into a 16-bit float using SoftFloat's i32_to_f16, 
+    and return a Python float result.
+    """
+    a_bits = np.int32(a_i32).view(np.uint32)
+    res_bits = lib.i32_to_f16(a_bits)
+    return float16_bits_to_float(res_bits)
+
+def ui16_to_f16_softfloat(a_u16):
+    """
+    Uses SoftFloat's ui16_to_f16 to convert an unsigned 16-bit integer
+    into a 16-bit float (returned as a Python float).
+    """
+    return lib.ui16_to_f16(a_u16)
+
+def ui16_to_f16_python(a_u16):
+    """
+    Convenience function: convert an unsigned 16-bit integer
+    into a 16-bit float using SoftFloat's ui16_to_f16, 
+    and return a Python float result.
+    """
+    a_bits = np.uint16(a_u16)
+    res_bits = lib.ui16_to_f16(a_bits)
+    return float16_bits_to_float(res_bits)
+
+def ui32_to_f16_softfloat(a_u32):
+    """
+    Uses SoftFloat's ui32_to_f16 to convert an unsigned 32-bit integer
+    into a 16-bit float (returned as a Python float).
+    """
+    return lib.ui32_to_f16(a_u32)
+
+def ui32_to_f16_python(a_u32):
+    """
+    Convenience function: convert an unsigned 32-bit integer
+    into a 16-bit float using SoftFloat's ui32_to_f16, 
+    and return a Python float result.
+    """
+    a_bits = np.uint32(a_u32)
+    res_bits = lib.ui32_to_f16(a_bits)
+    return float16_bits_to_float(res_bits)
+
+
 def float16_bits_to_float(f16_bits):
     """
     Convert a 16-bit integer (representing a float16) to a Python float using NumPy.
@@ -259,40 +340,12 @@ def parse_float16_input(x):
         raise TypeError(f"Unsupported type for input: {type(x)}")
 
 
-def test_f16_sin_circle():
-    output_path = Path("tests/f16_sin_fixed_q8_8_test_detail.csv")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", newline="") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(["deg256", "deg256_hex", "radians", "softfloat_result", "softfloat_hex", "numpy_result_f16", "numpy_hex_f16", "abs_error"])
-        for deg256 in range(0, 1 << 16):
-            # Convert 8.8 fixed-point circle units to radians:
-            #   angle = (deg256 / 65536) * 2π
-            radians = deg256 * (2 * math.pi) / 65536.0
-
-            # Show the half-precision representation of the radian angle
-            valA_f16 = np.float16(radians)
-
-            # Call SoftFloat's sine using the raw 8.8 fixed-point angle
-            result_bits = f16_sin_softfloat(deg256)
-            # Interpret the returned bits as float16
-            valS_f16 = np.uint16(result_bits).view(np.float16)
-
-            # Reference via NumPy in float16
-            valN_f16 = np.float16(math.sin(radians))
-            numpy_hex = f"0x{valN_f16.view(np.uint16):04X}"
-
-            # Absolute error (in float)
-            err = abs(float(valS_f16) - float(valN_f16))
-
-            writer.writerow([deg256, f"0x{deg256:04X}", float(valA_f16), float(valS_f16), f"0x{result_bits:04X}", float(valN_f16), numpy_hex, f"{err:.6e}"])
-
-
-
 # Example usage
 if __name__ == "__main__":
-    valZ = f16_sin_softfloat(0x3768)
-    print(f"0x{valZ:04X} -> {float16_bits_to_float(valZ)}")
+    a = 0x8011
+    print(f"Input: {a}")
+    # print(f"ui32_to_f16_python: {ui32_to_f16_python(a)}")
+    print(f"ui16_to_f16_python: {ui16_to_f16_python(a)}")
 
 
     # test_f16_sin_circle()

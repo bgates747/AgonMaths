@@ -263,6 +263,27 @@
         pop bc
     ENDMACRO
 
+    MACRO PRINT_HL_F16 msg
+        push bc
+        push de
+        push af
+        push hl
+        push ix
+        push iy
+        call f16_print
+        call printString
+        ld a,' '
+        rst.lil 0x10
+        call printInline
+        asciz msg,"\r\n"
+        pop iy
+        pop ix
+        pop hl
+        pop af
+        pop de
+        pop bc
+    ENDMACRO
+
     MACRO PRINT_UHL_HEX msg
         push bc
         push de
