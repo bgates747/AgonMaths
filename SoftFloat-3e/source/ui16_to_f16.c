@@ -3,8 +3,6 @@
 #include "internals.h"
 #include "softfloat.h"
 
-#include "debug_print.h"
-
 float16_t ui16_to_f16(uint16_t a)
 {
     int_fast8_t shiftDist;

@@ -55,6 +55,7 @@ exit:
     include "../softfloat/f16_sqrt.inc"
     include "../softfloat/f16_sub.inc"
     include "../softfloat/ui16_to_f16.inc"
+    include "../softfloat/uq8_8_to_f16.inc"
     include "../softfloat/s_addMagsF16.inc"
     include "../softfloat/s_normSubnormalF16Sig.inc"
     include "../softfloat/s_roundPackToF16.inc"
@@ -71,6 +72,7 @@ exit:
     include "f16_test_print.inc"
     include "smul_16_32.inc"
     include "f16_test_ui16_to_f16.inc"
+    include "f16_test_uq8_8_to_f16.inc"
 
 main:
     ; ld hl,0x4009 ; significand
@@ -121,7 +123,8 @@ main:
     ; call test_f16_sqrt
     ; call test_f16_print
     ; call test_smul_16_32
-    call test_ui16_to_f16
+    ; call test_ui16_to_f16
+    call test_uq8_8_to_f16
 
     ret
 

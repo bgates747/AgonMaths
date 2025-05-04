@@ -70,6 +70,9 @@ ffi.cdef("""
 
     // Convert an unsigned 16-bit integer to a float16 value.
     float16_t ui16_to_f16(uint16_t a);
+         
+    // Convert an unsigned 8.8 fixed-point value to a float16 value.
+    float16_t uq8_8_to_f16(uint16_t a);
 
     // Convert an unsigned 32-bit integer to a float16 value.
     float16_t ui32_to_f16(uint32_t a);
@@ -282,6 +285,23 @@ def ui16_to_f16_python(a_u16):
     res_bits = lib.ui16_to_f16(a_bits)
     return float16_bits_to_float(res_bits)
 
+def uq8_8_to_f16_softfloat(a_u16):
+    """
+    Uses SoftFloat's uq8_8_to_f16 to convert an unsigned 8.8 fixed-point value
+    into a 16-bit float (returned as a Python float16 bit pattern).
+    """
+    return lib.uq8_8_to_f16(a_u16)
+
+def uq8_8_to_f16_python(a_u16):
+    """
+    Convenience function: convert an unsigned 8.8 fixed-point value
+    into a Python float using SoftFloat's uq8_8_to_f16,
+    interpreting the input as (int_part + frac_part / 256.0).
+    """
+    a_bits = np.uint16(a_u16)
+    res_bits = lib.uq8_8_to_f16(a_bits)
+    return float16_bits_to_float(res_bits)
+
 def ui32_to_f16_softfloat(a_u32):
     """
     Uses SoftFloat's ui32_to_f16 to convert an unsigned 32-bit integer
@@ -342,10 +362,9 @@ def parse_float16_input(x):
 
 # Example usage
 if __name__ == "__main__":
-    a = 0x8011
-    print(f"Input: {a}")
-    # print(f"ui32_to_f16_python: {ui32_to_f16_python(a)}")
-    print(f"ui16_to_f16_python: {ui16_to_f16_python(a)}")
+    a = 0x017F
+    print(f"Input: 0x{a:04X} {a/256}")
+    print(f"uq8_8_to_f16_python: {uq8_8_to_f16_python(a)}")
 
 
     # test_f16_sin_circle()

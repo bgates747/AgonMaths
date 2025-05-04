@@ -147,6 +147,7 @@ OBJS_OTHERS = \
   s_mulAddF128$(OBJ) \
   softfloat_state$(OBJ) \
   ui16_to_f16$(OBJ) \
+  uq8_8_to_f16$(OBJ) \
   ui32_to_f16$(OBJ) \
   ui32_to_f32$(OBJ) \
   ui32_to_f64$(OBJ) \
