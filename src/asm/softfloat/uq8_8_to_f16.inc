@@ -1,5 +1,5 @@
-; convert an unsigned 16-bit integer to a float16
-; inputs: hl = unsigned 16-bit integer
+; convert an unsigned 8.8 fixed point number to a float16
+; inputs: hl = unsigned 8.8 fixed point number
 ; outputs: hl = float16
 ; destroys af, hl, bc, de, ix
 uq8_8_to_f16:

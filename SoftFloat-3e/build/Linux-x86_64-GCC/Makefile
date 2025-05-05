@@ -112,6 +112,7 @@ OBJS_SPECIALIZE = \
   s_propagateNaNF128UI$(OBJ) \
 
 OBJS_OTHERS = \
+  s_roundToUI16$(OBJ) \
   s_roundToUI32$(OBJ) \
   s_roundToUI64$(OBJ) \
   s_roundToI32$(OBJ) \
@@ -177,6 +178,7 @@ OBJS_OTHERS = \
   i64_to_extF80M$(OBJ) \
   i64_to_f128$(OBJ) \
   i64_to_f128M$(OBJ) \
+  f16_to_ui16$(OBJ) \
   f16_to_ui32$(OBJ) \
   f16_to_ui64$(OBJ) \
   f16_to_i32$(OBJ) \

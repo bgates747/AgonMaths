@@ -12,7 +12,6 @@ def generate_test_file(outfile):
     data = bytearray()
     total = 1 << 16
     for a in range(total):
-        # call your SoftFloat‐based sine, passing the raw 8.8 angle
         result_bits = uq8_8_to_f16_softfloat(a)
         # pack: input angle, result bits, zero placeholder
         data += struct.pack('<HHH', a, result_bits, 0x0000)

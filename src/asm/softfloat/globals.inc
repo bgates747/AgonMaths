@@ -1,4 +1,7 @@
 canonicalNaNF16: EQU 0x7E00
+ui16_fromPosOverflow: EQU 0xFFFF
+ui16_fromNegOverflow: EQU 0xFFFF
+ui16_fromNaN: EQU 0xFFFF
 
 str_inf:  asciz "   Inf"
 str_nan:  asciz "   NaN"

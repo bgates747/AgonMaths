@@ -76,6 +76,9 @@ ffi.cdef("""
 
     // Convert an unsigned 32-bit integer to a float16 value.
     float16_t ui32_to_f16(uint32_t a);
+         
+    // Convert a float16 value to an unsigned 16-bit integer.
+    uint_fast16_t f16_to_ui16( float16_t a );
 
     // DEBUG: print the rounding mode
     void printRoundingModeInfo();
@@ -319,6 +322,13 @@ def ui32_to_f16_python(a_u32):
     res_bits = lib.ui32_to_f16(a_bits)
     return float16_bits_to_float(res_bits)
 
+def f16_to_ui16_python(a):
+    """
+    Converts a Python float to float16 (via f32), then calls f16_to_ui16
+    and returns an unsigned 16-bit integer result.
+    """
+    f16_bits = float_to_f16_bits(a)  # Convert Python float to float16 bits
+    return lib.f16_to_ui16(f16_bits)
 
 def float16_bits_to_float(f16_bits):
     """
@@ -362,9 +372,13 @@ def parse_float16_input(x):
 
 # Example usage
 if __name__ == "__main__":
-    a = 0x017F
-    print(f"Input: 0x{a:04X} {a/256}")
-    print(f"uq8_8_to_f16_python: {uq8_8_to_f16_python(a)}")
+    a = 0.50048828125
+    a_ui16 = f16_to_ui16_python(a)
+    print(f"Input: {a} -> {a_ui16} 0x{a_ui16:04X}")
+
+    # a = 0x017F
+    # print(f"Input: 0x{a:04X} {a/256}")
+    # print(f"uq8_8_to_f16_python: {uq8_8_to_f16_python(a)}")
 
 
     # test_f16_sin_circle()

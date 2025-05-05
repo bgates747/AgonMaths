@@ -10,7 +10,7 @@ def f16_to_bits(val: np.float16) -> int:
 N = 256
 
 # Generate tables
-sin_bits = [(lambda i: f16_to_bits(np.float16(np.sin((i * np.pi) / 128.0))))(i) for i in range(N)]
+result_bits = [(lambda i: f16_to_bits(np.float16(np.sin((i * np.pi) / 128.0))))(i) for i in range(N)]
 diff_bits = []
 for i in range(N):
     y0 = np.float16(np.sin((i    ) * np.pi / 128.0))
@@ -38,7 +38,7 @@ def print_c(name, bits_list):
     print("};\n")
 
 # Output assembly
-print_assembly("sin_lut_f16", sin_bits)
+print_assembly("sin_lut_f16", result_bits)
 print()
 print_assembly("diff_lut_f16", diff_bits)
 print()
@@ -47,7 +47,7 @@ print()
 
 # Output C
 print("/* ---------------- C tables ---------------- */")
-print_c("sin_lut_f16", sin_bits)
+print_c("sin_lut_f16", result_bits)
 print_c("diff_lut_f16", diff_bits)
 print_c("frac_lut_f16", frac_bits)
 

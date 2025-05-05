@@ -54,12 +54,14 @@ exit:
     include "../softfloat/f16_sin.inc"
     include "../softfloat/f16_sqrt.inc"
     include "../softfloat/f16_sub.inc"
+    include "../softfloat/f16_to_ui16.inc"
     include "../softfloat/ui16_to_f16.inc"
     include "../softfloat/uq8_8_to_f16.inc"
     include "../softfloat/s_addMagsF16.inc"
     include "../softfloat/s_normSubnormalF16Sig.inc"
     include "../softfloat/s_roundPackToF16.inc"
     include "../softfloat/s_shiftRightJam32.inc"
+    include "../softfloat/s_roundToUI16.inc"
     include "../softfloat/s_subMagsF16.inc"
 
     include "f16_test_add.inc"
@@ -73,8 +75,14 @@ exit:
     include "smul_16_32.inc"
     include "f16_test_ui16_to_f16.inc"
     include "f16_test_uq8_8_to_f16.inc"
+    include "f16_test_f16_to_ui16.inc"
 
 main:
+    ; ld hl,0x3801
+    ; call f16_to_ui16
+    ; PRINT_HL_HEX "ui16 hex"
+    ; ret
+
     ; ld hl,0x4009 ; significand
     ; ld b,0x1d ; exponent
     ; ld c,0 ; sign
@@ -124,7 +132,8 @@ main:
     ; call test_f16_print
     ; call test_smul_16_32
     ; call test_ui16_to_f16
-    call test_uq8_8_to_f16
+    ; call test_uq8_8_to_f16
+    call test_f16_to_ui16
 
     ret
 

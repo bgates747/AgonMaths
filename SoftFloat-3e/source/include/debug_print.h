@@ -4,8 +4,9 @@
 #include <stdint.h>
 #include <string.h>   // for memcpy()
 
-// Make sure float16_t is known here:
-#include "internals.h"   // or wherever float16_t is defined
+#ifndef SOFTFLOAT_TYPES_H
+# include "softfloat_types.h"
+#endif
 
 //— per-width print helpers —//
 // u8  : two hex digits

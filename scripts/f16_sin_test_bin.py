@@ -7,15 +7,15 @@ def generate_fp16_sin_test(outfile):
     """
     Generate a binary file containing 65 536 test cases for f16_sin.
     Each record is three little-endian uint16_t’s:
-      [ angle8_8, sin_bits, placeholder(=0) ]
+      [ angle8_8, result_bits, placeholder(=0) ]
     """
     data = bytearray()
     total = 1 << 16
     for angle8_8 in range(total):
         # call your SoftFloat‐based sine, passing the raw 8.8 angle
-        sin_bits = f16_sin_softfloat(angle8_8)
+        result_bits = f16_sin_softfloat(angle8_8)
         # pack: input angle, result bits, zero placeholder
-        data += struct.pack('<HHH', angle8_8, sin_bits, 0x0000)
+        data += struct.pack('<HHH', angle8_8, result_bits, 0x0000)
         if (angle8_8 & 0x1FFF) == 0:  # every 8192 cases
             print(f"\r{angle8_8}/{total} generated", end='', flush=True)
     print()
