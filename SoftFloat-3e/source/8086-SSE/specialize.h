@@ -59,6 +59,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define i16_fromNaN          (-0x7FFF - 1)
 
 /*----------------------------------------------------------------------------
+| The values to return on conversions to unsigned 16.8 fixed-point formats that
+| raise an invalid exception.
+*----------------------------------------------------------------------------*/
+#define uq16_8_fromPosOverflow 0xFFFFFF
+#define uq16_8_fromNegOverflow 0x000000
+#define uq16_8_fromNaN         0xFFFFFF
+
+/*----------------------------------------------------------------------------
 | The values to return on conversions to 32-bit integer formats that raise an
 | invalid exception.
 *----------------------------------------------------------------------------*/

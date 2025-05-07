@@ -40,13 +40,13 @@ SPECIALIZE_TYPE ?= 8086-SSE
 SOFTFLOAT_OPTS ?= \
   -DINLINE_LEVEL=5  \
   -DSOFTFLOAT_ROUND_ODD \
-  # -DSOFTFLOAT_FAST_DIV32TO16 \
-  # -DSOFTFLOAT_FAST_DIV64TO32 \
+  -DSOFTFLOAT_FAST_DIV32TO16 \
+  -DSOFTFLOAT_FAST_DIV64TO32 \
 
 DELETE = rm -f
 C_INCLUDES = -I. -I$(SOURCE_DIR)/$(SPECIALIZE_TYPE) -I$(SOURCE_DIR)/include
 COMPILE_C = \
-  gcc -c -fPIC -Werror-implicit-function-declaration -DSOFTFLOAT_FAST_INT64 \
+  @gcc -c -fPIC -Werror-implicit-function-declaration -DSOFTFLOAT_FAST_INT64 \
     $(SOFTFLOAT_OPTS) $(C_INCLUDES) -O2 -o $@
 MAKELIB = ar crs $@
 
@@ -113,6 +113,7 @@ OBJS_SPECIALIZE = \
 
 OBJS_OTHERS = \
   s_roundToUI16$(OBJ) \
+  s_roundToUQ16_8$(OBJ) \
   s_roundToUI32$(OBJ) \
   s_roundToUI64$(OBJ) \
   s_roundToI32$(OBJ) \
@@ -179,6 +180,7 @@ OBJS_OTHERS = \
   i64_to_f128$(OBJ) \
   i64_to_f128M$(OBJ) \
   f16_to_ui16$(OBJ) \
+  f16_to_uq16_8$(OBJ) \
   f16_to_ui32$(OBJ) \
   f16_to_ui64$(OBJ) \
   f16_to_i32$(OBJ) \

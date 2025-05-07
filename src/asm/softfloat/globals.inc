@@ -3,6 +3,10 @@ ui16_fromPosOverflow: EQU 0xFFFF
 ui16_fromNegOverflow: EQU 0xFFFF
 ui16_fromNaN: EQU 0xFFFF
 
+uq16_8_fromPosOverflow: EQU 0xFFFFFF
+uq16_8_fromNegOverflow: EQU 0x000000
+uq16_8_fromNaN:         EQU 0xFFFFFF
+
 str_inf:  asciz "   Inf"
 str_nan:  asciz "   NaN"
 str_zero: asciz "     0"

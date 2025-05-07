@@ -55,6 +55,7 @@ exit:
     include "../softfloat/f16_sqrt.inc"
     include "../softfloat/f16_sub.inc"
     include "../softfloat/f16_to_ui16.inc"
+    include "../softfloat/f16_to_uq16_8.inc"
     include "../softfloat/ui16_to_f16.inc"
     include "../softfloat/uq8_8_to_f16.inc"
     include "../softfloat/s_addMagsF16.inc"
@@ -62,6 +63,7 @@ exit:
     include "../softfloat/s_roundPackToF16.inc"
     include "../softfloat/s_shiftRightJam32.inc"
     include "../softfloat/s_roundToUI16.inc"
+    include "../softfloat/s_roundToUQ16_8.inc"
     include "../softfloat/s_subMagsF16.inc"
 
     include "f16_test_add.inc"
@@ -76,8 +78,25 @@ exit:
     include "f16_test_ui16_to_f16.inc"
     include "f16_test_uq8_8_to_f16.inc"
     include "f16_test_f16_to_ui16.inc"
+    include "f16_test_f16_to_uq16_8.inc"
 
 main:
+    ; ld a,12
+    ; cp 13
+    ; PRINT_A_HEX ""
+    ; call dumpFlags
+
+    ; ld a,13
+    ; cp 13
+    ; PRINT_A_HEX ""
+    ; call dumpFlags
+
+    ; ld a,14
+    ; cp 13
+    ; PRINT_A_HEX ""
+    ; call dumpFlags
+    ; ret
+
     ; ld hl,0x3801
     ; call f16_to_ui16
     ; PRINT_HL_HEX "ui16 hex"
@@ -126,14 +145,15 @@ main:
     ; call test_f16_sub
     ; call test_f16_mul
     ; call test_f16_div
-    ; call test_f16_cos
-    ; call test_f16_sin
+    call test_f16_cos
+    call test_f16_sin
     ; call test_f16_sqrt
     ; call test_f16_print
     ; call test_smul_16_32
-    ; call test_ui16_to_f16
+    ; ; call test_ui16_to_f16 ; bad file
     ; call test_uq8_8_to_f16
-    call test_f16_to_ui16
+    ; ; call test_f16_to_ui16 ; bad file
+    ; call test_f16_to_uq16_8
 
     ret
 

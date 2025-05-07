@@ -2,8 +2,6 @@
 ; output: hl = sin(angle256) in float16 format
 ; destroys: af, hl, bc, de, ix
 f16_sin:
-; set index to global variables
-    ld ix,s_globals
 ; {
 ;     /*------------------------------------------------------------------------
 ;     * Split 8.8 into index + fractional part

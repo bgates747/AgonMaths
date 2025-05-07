@@ -3,9 +3,8 @@ from cffi import FFI
 import struct
 import numpy as np
 import os
-import math
-import csv
-from pathlib import Path
+from fractions import Fraction
+
 
 # ----------------------------
 # Pure Python Helpers
@@ -79,6 +78,9 @@ ffi.cdef("""
          
     // Convert a float16 value to an unsigned 16-bit integer.
     uint_fast16_t f16_to_ui16( float16_t a );
+         
+    // Convert a float16 value to an unsigned 8.8 fixed-point value.
+    uint_fast16_t f16_to_uq16_8( float16_t a );
 
     // DEBUG: print the rounding mode
     void printRoundingModeInfo();
@@ -330,6 +332,30 @@ def f16_to_ui16_python(a):
     f16_bits = float_to_f16_bits(a)  # Convert Python float to float16 bits
     return lib.f16_to_ui16(f16_bits)
 
+def f16_to_ui16_softfloat(a_f16):
+    """
+    Converts a float16 (given as a 16-bit integer) to an unsigned 16-bit integer
+    using SoftFloat's f16_to_ui16.
+    Returns the unsigned 16-bit integer result.
+    """
+    return lib.f16_to_ui16(a_f16)
+
+def f16_to_uq16_8_softfloat(a_f16):
+    """
+    Converts a float16 (given as a 16-bit integer) to an unsigned 8.8 fixed-point value
+    using SoftFloat's f16_to_uq16_8.
+    Returns the unsigned 16-bit integer result.
+    """
+    return lib.f16_to_uq16_8(a_f16)
+
+def f16_to_uq16_8_python(a):
+    """
+    Converts a Python float to float16 (via f32), then calls f16_to_uq16_8
+    and returns an unsigned 16-bit integer result.
+    """
+    f16_bits = float_to_f16_bits(a)  # Convert Python float to float16 bits
+    return lib.f16_to_uq16_8(f16_bits)
+
 def float16_bits_to_float(f16_bits):
     """
     Convert a 16-bit integer (representing a float16) to a Python float using NumPy.
@@ -372,9 +398,9 @@ def parse_float16_input(x):
 
 # Example usage
 if __name__ == "__main__":
-    a = 0.50048828125
-    a_ui16 = f16_to_ui16_python(a)
-    print(f"Input: {a} -> {a_ui16} 0x{a_ui16:04X}")
+    a = 3.141592653589793
+    a_uq16_8 = f16_to_uq16_8_python(a)
+    print(f"Input: {a} -> 0x{a_uq16_8:04X} {a_uq16_8/256}")
 
     # a = 0x017F
     # print(f"Input: 0x{a:04X} {a/256}")

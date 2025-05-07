@@ -15,8 +15,8 @@ def process_fp16_sin_testfile(infile, detail_outfile):
     with open(detail_outfile, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow([
-            'uq8_8',
-            'uq8_8_hex',
+            'uq16_8',
+            'uq16_8_hex',
             'expected_hex',
             'expected_dec',
             'asm_hex',
