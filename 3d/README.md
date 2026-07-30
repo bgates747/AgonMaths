@@ -50,11 +50,24 @@ behavior or test dependencies.
 
 ## Current state
 
-All scalar, trigonometric, translation, axis/XYZ rotation, and row-major
-matrix-vector entry points are implemented. The emulator-backed suites
-currently pass 60,596 scalar records and 71,834 transform records.
-The transform runner follows correctness with 20,000 successful, in-memory
-calls per entry point and reports loop-baseline-subtracted 60 Hz budgets.
+The library implements scalar arithmetic, forward and inverse trigonometric
+lookup, vector transforms, row-major matrix/vector and matrix/matrix
+composition, canonical Pingo Euler import/export, and persistent eZ80-side
+object pose integration.
+
+`p3d_object_size` is a packed 64-byte state. Named `equ` offsets expose its
+dirty flags, Pingo control/object/mesh/texture-bitmap IDs, absolute position,
+absolute Pingo Euler cache, scale, local-to-world orientation, local linear and
+angular velocities, and sub-bin angular residuals. Pingo remains write-only:
+the eZ80 owns the state and `p3d_object_sync16` emits only dirty absolute
+create/scale/rotation/translation commands.
+
+The established emulator-backed suites pass 60,596 scalar records and 71,834
+transform records. The pose suite contains 181,759 records, with at least
+10,000 deterministic cases per public arithmetic, pose, and packet-builder
+operation. The transform runner follows correctness with 20,000 successful,
+in-memory calls per entry point and reports loop-baseline-subtracted 60 Hz
+budgets.
 
 Consumers must include the implementation and its generated table, in that
 order:
@@ -85,12 +98,13 @@ current mutable Pingo VDP module from
   /home/smith/Agon/mystuff/AgonMaths/3d/emulator/pingoasm
 ```
 
-The scalar regression runner manages the profile's `autoexec.txt` and runs
+Each regression runner manages the profile's `autoexec.txt` and runs
 headlessly. Run these from the AgonMaths root; the combined command regenerates
-both fixtures before assembly:
+all three fixtures before assembly:
 
 ```bash
 .venv/bin/python 3d/scripts/run_math_regression.py
 .venv/bin/python 3d/scripts/run_transform_regression.py
+.venv/bin/python 3d/scripts/run_pose_regression.py
 .venv/bin/python 3d/scripts/run_all_regressions.py
 ```

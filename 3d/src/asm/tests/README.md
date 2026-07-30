@@ -15,3 +15,10 @@ write compact result files for host automation. After a clean correctness
 pass, the transform program also runs file-free successful-call timing loops;
 the `P3T2` result contains both the mixed regression times and the
 baseline-subtracted call times.
+
+`3d_pose.asm` consumes the 224-byte records produced by
+`generate_pose_vectors.py`. It compares complete 64-byte object states,
+auxiliary-input immutability, pointer preservation, direct inverse-trig/Euler
+outputs, Pingo packet bytes and builder return registers, carry, and
+surrounding canaries. Its `P3P1` result includes per-op errors, PRT1
+mixed-regression times, and the first failing record snapshot.

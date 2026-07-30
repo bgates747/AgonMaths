@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the interleaved 256-entry signed-Q15 sine/cosine table."""
+"""Generate forward and inverse lookup tables for the 256-bin trig API."""
 
 from __future__ import annotations
 
@@ -56,6 +56,57 @@ def build_table() -> tuple[list[int], list[int]]:
     return sine, cosine
 
 
+def build_inverse_tables(
+    sine: list[int],
+    cosine: list[int],
+) -> tuple[list[tuple[int, int]], list[int]]:
+    atan2_boundaries = [
+        (
+            cosine[index] - cosine[index + 1],
+            sine[index + 1] - sine[index],
+        )
+        for index in range(32)
+    ]
+    asin_thresholds = [
+        (sine[index] + sine[index + 1]) // 2 + 1
+        for index in range(64)
+    ]
+
+    assert len(atan2_boundaries) == 32
+    assert all(
+        (dx, dy) == (
+            cosine[index] - cosine[index + 1],
+            sine[index + 1] - sine[index],
+        )
+        for index, (dx, dy) in enumerate(atan2_boundaries)
+    )
+    assert all(0 < dx <= 32767 and 0 < dy <= 32767
+               for dx, dy in atan2_boundaries)
+    assert all(
+        sine[index] * dy <= cosine[index] * dx
+        and sine[index + 1] * dy > cosine[index + 1] * dx
+        for index, (dx, dy) in enumerate(atan2_boundaries)
+    )
+
+    assert len(asin_thresholds) == 64
+    assert all(
+        threshold == (sine[index] + sine[index + 1]) // 2 + 1
+        for index, threshold in enumerate(asin_thresholds)
+    )
+    assert all(
+        0 < asin_thresholds[index] < asin_thresholds[index + 1] <= 32767
+        for index in range(63)
+    )
+    assert all(
+        abs((threshold - 1) - sine[index])
+        <= abs((threshold - 1) - sine[index + 1])
+        and abs(threshold - sine[index + 1])
+        < abs(threshold - sine[index])
+        for index, threshold in enumerate(asin_thresholds)
+    )
+    return atan2_boundaries, asin_thresholds
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -66,6 +117,7 @@ def main() -> None:
     args = parser.parse_args()
 
     sine, cosine = build_table()
+    atan2_boundaries, asin_thresholds = build_inverse_tables(sine, cosine)
     packed = b"".join(
         struct.pack("<hh", sine[index], cosine[index])
         for index in range(256)
@@ -83,9 +135,33 @@ def main() -> None:
         f"    dw {sine[index]:6d},{cosine[index]:6d} ; {index:3d}"
         for index in range(256)
     )
+    lines.extend([
+        "",
+        "; First-octant atan2 nearest-bin boundaries.",
+        "; Each entry is dx=cos[j]-cos[j+1], dy=sin[j+1]-sin[j].",
+        "p3d_atan2_octant_boundaries_q15:",
+    ])
+    lines.extend(
+        f"    dw {dx:6d},{dy:6d} ; {index:2d}"
+        for index, (dx, dy) in enumerate(atan2_boundaries)
+    )
+    lines.extend([
+        "",
+        "; Positive-quadrant asin nearest-bin thresholds.",
+        "; Each entry is floor((sin[j]+sin[j+1])/2)+1.",
+        "p3d_asin_thresholds_q15:",
+    ])
+    lines.extend(
+        f"    dw {threshold:6d} ; {index:2d}"
+        for index, threshold in enumerate(asin_thresholds)
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines) + "\n", encoding="ascii")
-    print(f"wrote {len(packed)} table bytes to {args.output}")
+    inverse_bytes = 4 * len(atan2_boundaries) + 2 * len(asin_thresholds)
+    print(
+        f"wrote {len(packed)} sine/cosine bytes and "
+        f"{inverse_bytes} inverse bytes to {args.output}"
+    )
 
 
 if __name__ == "__main__":
