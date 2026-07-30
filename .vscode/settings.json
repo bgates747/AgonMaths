@@ -1,7 +1,5 @@
 {
     "files.associations": {
-        "*.asm": "asm-collection",
-        "*.inc": "asm-collection",
         "cmath": "cpp",
         "cstdint": "c",
         "debug_print.h": "c",
