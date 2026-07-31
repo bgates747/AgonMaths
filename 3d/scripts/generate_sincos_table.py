@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate forward and inverse lookup tables for the 256-bin trig API."""
+"""Generate coarse/fine forward and inverse tables for the trig APIs."""
 
 from __future__ import annotations
 
@@ -32,6 +32,27 @@ def sin_decimal(value: Decimal) -> Decimal:
         n += 1
 
 
+def atan_decimal(value: Decimal) -> Decimal:
+    """Return atan(value) without depending on platform libm results."""
+
+    if value < 0:
+        return -atan_decimal(-value)
+    if value > Decimal("0.5"):
+        return PI / 4 + atan_decimal((value - 1) / (value + 1))
+
+    square = value * value
+    term = value
+    total = value
+    denominator = 1
+    while True:
+        term *= -square
+        denominator += 2
+        updated = total + term / Decimal(denominator)
+        if updated == total:
+            return total
+        total = updated
+
+
 def build_table() -> tuple[list[int], list[int]]:
     quarter = []
     for index in range(65):
@@ -54,6 +75,25 @@ def build_table() -> tuple[list[int], list[int]]:
     assert all(cosine[i] == sine[(i + 64) & 255] for i in range(256))
     assert all(sine[-i & 255] == -sine[i] for i in range(256))
     return sine, cosine
+
+
+def build_fine_atan_table() -> list[int]:
+    """Build first-octant atan nodes for a Q15 min/max ratio."""
+
+    table = []
+    for index in range(65):
+        ratio = Decimal(index) / Decimal(64)
+        scaled = atan_decimal(ratio) * Decimal(32768) / (2 * PI)
+        table.append(
+            int(scaled.to_integral_value(rounding=ROUND_HALF_UP))
+        )
+    assert table[0] == 0
+    assert table[-1] == 4096
+    assert all(
+        0 < table[index + 1] - table[index] <= 82
+        for index in range(64)
+    )
+    return table
 
 
 def build_inverse_tables(
@@ -117,6 +157,7 @@ def main() -> None:
     args = parser.parse_args()
 
     sine, cosine = build_table()
+    fine_atan = build_fine_atan_table()
     atan2_boundaries, asin_thresholds = build_inverse_tables(sine, cosine)
     packed = b"".join(
         struct.pack("<hh", sine[index], cosine[index])
@@ -134,6 +175,17 @@ def main() -> None:
     lines.extend(
         f"    dw {sine[index]:6d},{cosine[index]:6d} ; {index:3d}"
         for index in range(256)
+    )
+    lines.extend([
+        f"    dw {sine[0]:6d},{cosine[0]:6d} ; 256 interpolation sentinel",
+        "",
+        "; First-octant atan nodes for a Q15 min/max ratio.",
+        "; Linear interpolation uses the low nine ratio bits.",
+        "p3d_atan_octant_fine_q15:",
+    ])
+    lines.extend(
+        f"    dw {angle:6d} ; {index:2d}/64"
+        for index, angle in enumerate(fine_atan)
     )
     lines.extend([
         "",
@@ -157,10 +209,12 @@ def main() -> None:
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines) + "\n", encoding="ascii")
+    fine_bytes = 4 + 2 * len(fine_atan)
     inverse_bytes = 4 * len(atan2_boundaries) + 2 * len(asin_thresholds)
     print(
         f"wrote {len(packed)} sine/cosine bytes and "
-        f"{inverse_bytes} inverse bytes to {args.output}"
+        f"{fine_bytes} fine interpolation bytes and "
+        f"{inverse_bytes} coarse inverse bytes to {args.output}"
     )
 
 

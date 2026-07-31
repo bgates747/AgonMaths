@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate, assemble, and run the object-pose regression suite in Fab."""
+"""Generate, assemble, and run the matrix/object/camera pose suite in Fab."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from generate_pose_vectors import (
+    OP_CAMERA_INIT,
     OP_COUNT,
     OP_NAMES,
     RECORD_SIZE,
@@ -30,8 +31,8 @@ FAB = PROFILE / "fab-agon-emulator"
 VDP = PROFILE / "vdp_pingo.so"
 MOS = PROFILE / "mos_console8.bin"
 SDCARD = PROFILE / "sdcard"
-RESULT_SIZE = 189
-RESULT_MAGIC = b"P3P1"
+RESULT_SIZE = 99 + 5 * OP_COUNT
+RESULT_MAGIC = b"P3P3"
 
 
 def run(command: list[str], *, cwd: Path | None = None) -> None:
@@ -65,7 +66,7 @@ def validate_vectors(payload: bytes) -> tuple[int, list[int]]:
             raise RuntimeError(f"bad carry {carry} in record {index}")
         if mode not in (0, 1):
             raise RuntimeError(f"bad alias mode {mode} in record {index}")
-        if mode and opcode != 0:
+        if mode and opcode not in (0, OP_CAMERA_INIT):
             raise RuntimeError(f"alias mode on unsupported opcode {opcode}")
         if payload[offset + 3] != 0xA5:
             raise RuntimeError(f"bad header canary in record {index}")

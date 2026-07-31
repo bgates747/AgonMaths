@@ -9,14 +9,21 @@ record their output format in the corresponding test-source comments.
 - `generate_math_vectors.py` creates deterministic binary oracle records for
   the implemented scalar primitives.
 - `generate_sincos_table.py` creates the interleaved 256-entry signed-Q15
-  source table and verifies its packed SHA-256.
+  source table, interpolation sentinel, fine atan nodes, and coarse inverse
+  tables, and verifies the canonical table's packed SHA-256.
 - `generate_transform_vectors.py` creates deterministic oracle records for
   sine/cosine, translation, rotations, and matrix-vector multiplication.
 - `generate_pose_vectors.py` creates 224-byte oracle records for inverse
   trigonometry, matrix composition, canonical Euler conversion, intrinsic
   matrix/object rotations, local object translation, persistent-velocity
   integration, object-state initialization, and Pingo create/dirty-command
-  packet construction.
+  packet construction, plus camera-state initialization and stateful
+  fine-angle aim-at-point/aim-at-object solving under both roll policies. Its
+  directed object-step records include long held-control trajectories across
+  every axis and the Q15 cardinal saturation boundaries.
+- `test_camera_smoothness.py` checks deterministic fly-by continuity, angle
+  and step error, scale invariance, render-sampling holds, the signed seam,
+  elevated tracking, and independent near-pole yaw normalization.
 - `run_math_regression.py` generates the records, assembles the MOS runner,
   executes it in the project-local Pingo-compatible Fab profile, and checks
   the result file. It reports the original fixture-style PRT1 timing, including
@@ -27,4 +34,5 @@ record their output format in the corresponding test-source comments.
 - `run_pose_regression.py` runs the persistent pose suite, validates its
   grouped binary records, and reports per-operation PRT1 timing with file I/O
   paused.
-- `run_all_regressions.py` runs all three suites in sequence.
+- `run_all_regressions.py` runs the smoothness check and all three
+  emulator-backed suites in sequence.

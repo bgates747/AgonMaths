@@ -13,6 +13,7 @@ PYTHON = PROJECT.parent / ".venv/bin/python"
 
 def main() -> None:
     for runner in (
+        "test_camera_smoothness.py",
         "run_math_regression.py",
         "run_transform_regression.py",
         "run_pose_regression.py",

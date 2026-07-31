@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate deterministic regression vectors for matrix and object-pose APIs.
+"""Generate deterministic regression vectors for matrix, object, and camera APIs.
 
 The oracle deliberately uses the same integer domains as the assembly:
 
 * matrices are row-major signed Q15 with 32767 representing one;
-* angles are Pingo signed-turn words and are reduced to 256 lookup phases;
+* coarse object angles use 256 phases while camera aim retains every bit;
 * matrix dot products accumulate at signed 32-bit width and narrow once;
 * object updates are transactional.
 
@@ -20,10 +20,11 @@ import argparse
 import random
 import struct
 from dataclasses import dataclass, replace
+from math import isqrt
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from generate_sincos_table import build_table
+from generate_sincos_table import build_fine_atan_table, build_table
 
 
 RECORD_SIZE = 224
@@ -48,7 +49,12 @@ OP_ASIN = 14
 OP_MAT3_FROM_EULER = 15
 OP_OBJECT_BUILD_CREATE = 16
 OP_OBJECT_BUILD_NEXT_DIRTY = 17
-OP_COUNT = 18
+OP_CAMERA_INIT = 18
+OP_CAMERA_AIM_POINT = 19
+OP_CAMERA_AIM_OBJECT = 20
+OP_ATAN2_FINE = 21
+OP_SINCOS_FINE = 22
+OP_COUNT = 23
 
 OP_NAMES = (
     "mat3_mul",
@@ -69,6 +75,11 @@ OP_NAMES = (
     "mat3_from_euler",
     "object_build_create",
     "object_build_next_dirty",
+    "camera_init",
+    "camera_aim_point",
+    "camera_aim_object",
+    "atan2_fine",
+    "sincos_fine",
 )
 
 DIRTY_POSITION = 0x01
@@ -91,6 +102,27 @@ STATE_LINEAR_VELOCITY = 46
 STATE_ANGULAR_VELOCITY = 52
 STATE_ANGULAR_RESIDUAL = 58
 
+CAMERA_SIZE = 36
+CAMERA_DIRTY = 0
+CAMERA_LOOK_FLAGS = 1
+CAMERA_SID = 2
+CAMERA_POSITION = 4
+CAMERA_EULER = 10
+CAMERA_ORIENTATION = 16
+CAMERA_POLE_YAW = 34
+
+CAMERA_DIRTY_POSITION = 0x01
+CAMERA_DIRTY_ROTATION = 0x02
+CAMERA_DIRTY_ALL = 0x03
+
+CAMERA_LOOK_VALID = 0x01
+CAMERA_LOOK_IN_POLE = 0x02
+CAMERA_LOOK_INVERTED = 0x04
+
+CAMERA_ROLL_UPRIGHT = 0
+CAMERA_ROLL_CONTINUOUS = 1
+CAMERA_ROLL_POLICY_COUNT = 2
+
 PRIMARY_OFFSET = 4
 AUX_OFFSET = 68
 EXPECTED_PRIMARY_OFFSET = 132
@@ -102,6 +134,7 @@ IDENTITY = (NORM, 0, 0, 0, NORM, 0, 0, 0, NORM)
 ZERO_MATRIX = (0,) * 9
 ZERO_VEC = (0, 0, 0)
 SINE, COSINE = build_table()
+FINE_ATAN = tuple(build_fine_atan_table())
 ATAN2_BOUNDARIES = tuple(
     (
         COSINE[index] - COSINE[index + 1],
@@ -140,6 +173,73 @@ def sincos(raw: int) -> tuple[int, int]:
     return SINE[index], COSINE[index]
 
 
+def round_pow2_signed(value: int, half: int) -> int:
+    """Divide by ``2*half``, rounding exact halves away from zero."""
+
+    magnitude = (abs(value) + half) // (2 * half)
+    return -magnitude if value < 0 else magnitude
+
+
+def sincos_fine(raw: int) -> tuple[int, int]:
+    """Interpolate the full weighted Q15 coefficient at 1/32768 turn."""
+
+    angle = raw & 0x7FFF
+    index = angle >> 7
+    fraction = angle & 0x7F
+    next_index = (index + 1) & 0xFF
+
+    def interpolate(table: Sequence[int]) -> int:
+        numerator = (
+            table[index] * (128 - fraction)
+            + table[next_index] * fraction
+        )
+        return round_pow2_signed(numerator, 64)
+
+    return interpolate(SINE), interpolate(COSINE)
+
+
+def ratio_q15(minimum: int, maximum: int) -> int:
+    if minimum == maximum:
+        return 0x8000
+    return (minimum * 0x8000 + maximum // 2) // maximum
+
+
+def atan2_fine(y: int, x: int) -> int:
+    """Mirror the fine first-octant ratio/table implementation."""
+
+    x_negative = x < 0
+    y_negative = y < 0
+    x_magnitude = abs(x)
+    y_magnitude = abs(y)
+    if x_magnitude == 0 and y_magnitude == 0:
+        return 0
+
+    steep = y_magnitude > x_magnitude
+    maximum = max(x_magnitude, y_magnitude)
+    minimum = min(x_magnitude, y_magnitude)
+    ratio = ratio_q15(minimum, maximum)
+    if ratio == 0x8000:
+        octant = 4096
+    else:
+        index = ratio >> 9
+        fraction = ratio & 0x1FF
+        delta = FINE_ATAN[index + 1] - FINE_ATAN[index]
+        octant = FINE_ATAN[index] + (delta * fraction + 256) // 512
+    base = 8192 - octant if steep else octant
+
+    if not x_negative and not y_negative:
+        angle = base
+    elif x_negative and not y_negative:
+        angle = 16384 - base
+        if angle == 16384:
+            angle = -16384
+    elif x_negative and y_negative:
+        angle = base - 16384
+    else:
+        angle = -base
+    return s16(angle)
+
+
 def rounded_norm(value: int) -> int:
     """Round a signed integer divided by 32767, halves away from zero."""
 
@@ -168,6 +268,26 @@ def dot3(
     return result, not check_s16(result)
 
 
+def dot3_q15(
+    left: Sequence[int],
+    right: Sequence[int],
+) -> tuple[int, bool]:
+    """Matrix-orientation dot product with one-count Q15 saturation."""
+
+    partial, overflow = add_s32(left[0] * right[0], left[1] * right[1])
+    if overflow:
+        return 0, True
+    total, overflow = add_s32(partial, left[2] * right[2])
+    if overflow:
+        return 0, True
+    result = rounded_norm(total)
+    if result == 32768:
+        return 32767, False
+    if result == -32768:
+        return -32767, False
+    return result, not check_s16(result)
+
+
 def matrix_multiply(
     left: Sequence[int],
     right: Sequence[int],
@@ -178,6 +298,24 @@ def matrix_multiply(
         for column in range(3):
             rhs = (right[column], right[column + 3], right[column + 6])
             value, overflow = dot3(lhs, rhs)
+            if overflow:
+                return tuple(left), True
+            output.append(value)
+    return tuple(output), False
+
+
+def matrix_multiply_q15(
+    left: Sequence[int],
+    right: Sequence[int],
+) -> tuple[tuple[int, ...], bool]:
+    """Matrix composition with Q15 cardinal-boundary saturation."""
+
+    output: list[int] = []
+    for row in range(3):
+        lhs = left[row * 3:row * 3 + 3]
+        for column in range(3):
+            rhs = (right[column], right[column + 3], right[column + 6])
+            value, overflow = dot3_q15(lhs, rhs)
             if overflow:
                 return tuple(left), True
             output.append(value)
@@ -225,12 +363,30 @@ def matrix_from_euler(
 
     matrix: tuple[int, ...] = IDENTITY
     for axis in (2, 1, 0):
-        matrix, overflow = matrix_multiply(
+        matrix, overflow = matrix_multiply_q15(
             matrix, axis_matrix(axis, angles[axis]),
         )
         if overflow:
             return IDENTITY, True
     return matrix, False
+
+
+def camera_matrix_fine(angles: Sequence[int]) -> tuple[int, ...]:
+    """Closed-form Ry(y)*Rx(x) used by the zero-roll camera solver."""
+
+    sine_x, cosine_x = sincos_fine(angles[0])
+    sine_y, cosine_y = sincos_fine(angles[1])
+    return (
+        cosine_y,
+        rounded_norm(sine_y * sine_x),
+        rounded_norm(sine_y * cosine_x),
+        0,
+        cosine_x,
+        -sine_x,
+        -sine_y,
+        rounded_norm(cosine_y * sine_x),
+        rounded_norm(cosine_y * cosine_x),
+    )
 
 
 def required_matrix_from_euler(angles: Sequence[int]) -> tuple[int, ...]:
@@ -245,7 +401,7 @@ def rotate_matrix_axis(
     angle: int,
     axis: int,
 ) -> tuple[tuple[int, ...], bool]:
-    return matrix_multiply(matrix, axis_matrix(axis, angle))
+    return matrix_multiply_q15(matrix, axis_matrix(axis, angle))
 
 
 def rotate_matrix_xyz(
@@ -256,7 +412,7 @@ def rotate_matrix_xyz(
 
     output = tuple(matrix)
     for axis in (2, 1, 0):
-        output, overflow = matrix_multiply(
+        output, overflow = matrix_multiply_q15(
             output, axis_matrix(axis, angles[axis]),
         )
         if overflow:
@@ -396,6 +552,38 @@ class ObjectState:
         return bytes(output)
 
 
+@dataclass(frozen=True)
+class CameraState:
+    """The 36-byte camera state plus the untouched tail of a 64-byte slot."""
+
+    dirty: int
+    look_flags: int
+    sid: int
+    position: tuple[int, int, int]
+    euler: tuple[int, int, int]
+    orientation: tuple[int, ...]
+    pole_yaw: int
+    tail: bytes
+
+    def pack(self) -> bytes:
+        if len(self.tail) != STATE_SIZE - CAMERA_SIZE:
+            raise ValueError("camera slot tail has the wrong size")
+        output = bytearray(STATE_SIZE)
+        output[CAMERA_DIRTY] = self.dirty & 0xFF
+        output[CAMERA_LOOK_FLAGS] = self.look_flags & 0xFF
+        struct.pack_into("<H", output, CAMERA_SID, self.sid & 0xFFFF)
+        struct.pack_into(
+            "<hhh", output, CAMERA_POSITION, *map(s16, self.position),
+        )
+        struct.pack_into("<hhh", output, CAMERA_EULER, *map(s16, self.euler))
+        struct.pack_into(
+            "<9h", output, CAMERA_ORIENTATION, *map(s16, self.orientation),
+        )
+        struct.pack_into("<h", output, CAMERA_POLE_YAW, s16(self.pole_yaw))
+        output[CAMERA_SIZE:] = self.tail
+        return bytes(output)
+
+
 def object_translate(
     state: ObjectState,
     local_delta: Sequence[int],
@@ -528,6 +716,284 @@ def initialized_state(ids: Sequence[int]) -> ObjectState:
     )
 
 
+def empty_camera(
+    *,
+    dirty: int = 0,
+    look_flags: int = CAMERA_LOOK_VALID,
+    sid: int = 0x1021,
+    position: Sequence[int] = ZERO_VEC,
+    euler: Sequence[int] = ZERO_VEC,
+    orientation: Sequence[int] | None = None,
+    pole_yaw: int = 0,
+    tail: bytes | None = None,
+) -> CameraState:
+    euler_tuple = tuple(map(s16, euler))
+    if orientation is None:
+        orientation = required_matrix_from_euler(euler_tuple)
+    if tail is None:
+        tail = bytes((0x80 + index) & 0xFF for index in range(
+            STATE_SIZE - CAMERA_SIZE
+        ))
+    return CameraState(
+        dirty=dirty,
+        look_flags=look_flags,
+        sid=sid,
+        position=tuple(map(s16, position)),
+        euler=euler_tuple,
+        orientation=tuple(map(s16, orientation)),
+        pole_yaw=s16(pole_yaw),
+        tail=tail,
+    )
+
+
+def camera_init(
+    state: CameraState,
+    sid: int,
+    position: Sequence[int],
+) -> CameraState:
+    """Mirror p3d_camera_init16, including preservation past byte 35."""
+
+    return CameraState(
+        dirty=CAMERA_DIRTY_ALL,
+        look_flags=CAMERA_LOOK_VALID,
+        sid=sid & 0xFFFF,
+        position=tuple(map(s16, position)),
+        euler=ZERO_VEC,
+        orientation=IDENTITY,
+        pole_yaw=0,
+        tail=state.tail,
+    )
+
+
+def add_half_turn(value: int) -> int:
+    """Mirror p3d_lookat_add_half_turn16 byte for byte."""
+
+    result = (s16(value) + 16384) & 0xFFFF
+    if result & 0x4000:
+        result |= 0x8000
+    return s16(result)
+
+
+def select_inverted_look(
+    canonical_pitch: int,
+    canonical_yaw: int,
+    prior_pitch: int,
+) -> tuple[int, int]:
+    """Select the assembly's exact continuous-over-pole Euler branch."""
+
+    pitch = s16(canonical_pitch)
+    if pitch == 0:
+        pitch = -16384 if s16(prior_pitch) < 0 else 16384
+    elif pitch > 0:
+        pitch = s16(16384 - pitch)
+    else:
+        pitch = s16(-16384 - pitch)
+    return pitch, add_half_turn(canonical_yaw)
+
+
+def look_angle_distance(left: int, right: int) -> int:
+    """Shortest raw-word distance in the library's 32768-word turn."""
+
+    difference = (s16(left) - s16(right)) & 0x7FFF
+    return min(difference, 0x8000 - difference)
+
+
+def select_closest_look(
+    state: CameraState,
+    canonical_pitch: int,
+    canonical_yaw: int,
+) -> tuple[int, int, bool]:
+    """Choose the smaller wrapped pitch/yaw path; retain branch on a tie."""
+
+    inverted_pitch, inverted_yaw = select_inverted_look(
+        canonical_pitch, canonical_yaw, state.euler[0],
+    )
+    upright_distance = (
+        look_angle_distance(canonical_pitch, state.euler[0])
+        + look_angle_distance(canonical_yaw, state.euler[1])
+    )
+    inverted_distance = (
+        look_angle_distance(inverted_pitch, state.euler[0])
+        + look_angle_distance(inverted_yaw, state.euler[1])
+    )
+    choose_inverted = (
+        inverted_distance < upright_distance
+        or (
+            inverted_distance == upright_distance
+            and bool(state.look_flags & CAMERA_LOOK_INVERTED)
+        )
+    )
+    if choose_inverted:
+        return inverted_pitch, inverted_yaw, True
+    return canonical_pitch, canonical_yaw, False
+
+
+def normalized_look_direction(
+    camera: Sequence[int],
+    target: Sequence[int],
+) -> tuple[
+    tuple[int, int, int],
+    tuple[int, int, int],
+    tuple[bool, bool, bool],
+] | None:
+    """Return common-scaled signed direction and unsigned magnitudes."""
+
+    differences = tuple(
+        int(s16(target[index])) - int(s16(camera[index]))
+        for index in range(3)
+    )
+    negative = tuple(value < 0 for value in differences)
+    magnitudes = [abs(value) for value in differences]
+    maximum = max(magnitudes)
+    if maximum == 0:
+        return None
+    while maximum >= 2048:
+        magnitudes = [value >> 1 for value in magnitudes]
+        maximum >>= 1
+    while maximum < 1024:
+        magnitudes = [value << 1 for value in magnitudes]
+        maximum <<= 1
+    signed = tuple(
+        -magnitude if difference < 0 else magnitude
+        for difference, magnitude in zip(differences, magnitudes)
+    )
+    return (
+        (signed[0], signed[1], signed[2]),
+        (magnitudes[0], magnitudes[1], magnitudes[2]),
+        (negative[0], negative[1], negative[2]),
+    )
+
+
+def camera_aim_at_point(
+    state: CameraState,
+    target: Sequence[int],
+    policy: int,
+) -> tuple[CameraState, bool]:
+    """Integer oracle for p3d_camera_aim_at_point16."""
+
+    if not 0 <= policy < CAMERA_ROLL_POLICY_COUNT:
+        return state, True
+
+    direction = normalized_look_direction(state.position, target)
+    if direction is None:
+        return state, True
+    signed, magnitudes, negative = direction
+    dx, dy, dz = signed
+    _, abs_dy, _ = magnitudes
+
+    horizontal_squared = magnitudes[0] ** 2 + magnitudes[2] ** 2
+    horizontal = isqrt(horizontal_squared)
+    if horizontal_squared - horizontal * horizontal > horizontal:
+        horizontal += 1
+
+    canonical_pitch = atan2_fine(dy, horizontal)
+    exact = tuple(
+        int(s16(target[index])) - int(s16(state.position[index]))
+        for index in range(3)
+    )
+    yaw_x_magnitude = abs(exact[0])
+    yaw_z_magnitude = abs(exact[2])
+    while yaw_x_magnitude >= 32768 or yaw_z_magnitude >= 32768:
+        yaw_x_magnitude >>= 1
+        yaw_z_magnitude >>= 1
+    yaw_x = -yaw_x_magnitude if exact[0] < 0 else yaw_x_magnitude
+    yaw_z = -yaw_z_magnitude if exact[2] < 0 else yaw_z_magnitude
+    canonical_yaw = atan2_fine(-yaw_x, -yaw_z)
+    pitch = canonical_pitch
+    yaw = canonical_yaw
+    flags = state.look_flags & 0xFF
+    pole_yaw = state.pole_yaw
+
+    was_in_pole = bool(
+        flags & CAMERA_LOOK_VALID and flags & CAMERA_LOOK_IN_POLE
+    )
+    threshold = abs_dy >> (4 if was_in_pole else 5)
+    in_pole = horizontal <= threshold
+
+    if in_pole and not was_in_pole:
+        pitch = -8192 if negative[1] else 8192
+        if flags & CAMERA_LOOK_VALID:
+            pole_yaw = state.euler[1]
+            if flags & CAMERA_LOOK_INVERTED:
+                pole_yaw = add_half_turn(pole_yaw)
+        else:
+            pole_yaw = canonical_yaw
+            flags &= ~CAMERA_LOOK_INVERTED
+        flags |= CAMERA_LOOK_VALID | CAMERA_LOOK_IN_POLE
+        if policy == CAMERA_ROLL_UPRIGHT:
+            flags &= ~CAMERA_LOOK_INVERTED
+        yaw = (
+            add_half_turn(pole_yaw)
+            if flags & CAMERA_LOOK_INVERTED
+            else pole_yaw
+        )
+    elif in_pole:
+        pitch = -8192 if negative[1] else 8192
+        if not flags & CAMERA_LOOK_VALID:
+            flags &= ~CAMERA_LOOK_INVERTED
+        flags |= CAMERA_LOOK_VALID | CAMERA_LOOK_IN_POLE
+        if policy == CAMERA_ROLL_UPRIGHT:
+            flags &= ~CAMERA_LOOK_INVERTED
+        yaw = (
+            add_half_turn(pole_yaw)
+            if flags & CAMERA_LOOK_INVERTED
+            else pole_yaw
+        )
+    elif was_in_pole:
+        flags |= CAMERA_LOOK_VALID
+        flags &= ~CAMERA_LOOK_IN_POLE
+        if policy == CAMERA_ROLL_UPRIGHT:
+            flags &= ~CAMERA_LOOK_INVERTED
+        else:
+            delta_yaw = s16(canonical_yaw - pole_yaw)
+            _, cosine = sincos_fine(delta_yaw)
+            if cosine < 0:
+                flags ^= CAMERA_LOOK_INVERTED
+        if flags & CAMERA_LOOK_INVERTED:
+            pitch, yaw = select_inverted_look(
+                canonical_pitch, canonical_yaw, state.euler[0],
+            )
+    else:
+        flags |= CAMERA_LOOK_VALID
+        flags &= ~CAMERA_LOOK_IN_POLE
+        if policy == CAMERA_ROLL_UPRIGHT:
+            flags &= ~CAMERA_LOOK_INVERTED
+        elif state.look_flags & CAMERA_LOOK_VALID:
+            pitch, yaw, choose_inverted = select_closest_look(
+                state, canonical_pitch, canonical_yaw,
+            )
+            if choose_inverted:
+                flags |= CAMERA_LOOK_INVERTED
+            else:
+                flags &= ~CAMERA_LOOK_INVERTED
+        if not state.look_flags & CAMERA_LOOK_VALID:
+            flags &= ~CAMERA_LOOK_INVERTED
+        elif (
+            flags & CAMERA_LOOK_INVERTED
+            and (pitch, yaw) == (canonical_pitch, canonical_yaw)
+        ):
+            pitch, yaw = select_inverted_look(
+                canonical_pitch, canonical_yaw, state.euler[0],
+            )
+
+    euler = (s16(pitch), s16(yaw), 0)
+    orientation = camera_matrix_fine(euler)
+    dirty = state.dirty
+    if euler != state.euler:
+        dirty |= CAMERA_DIRTY_ROTATION
+    return (
+        replace(
+            state,
+            dirty=dirty,
+            look_flags=flags,
+            euler=euler,
+            orientation=orientation,
+            pole_yaw=s16(pole_yaw),
+        ),
+        False,
+    )
+
+
 def pingo_packet_prefix(
     state: ObjectState,
     subcommand: int,
@@ -640,11 +1106,42 @@ def random_state(
     )
 
 
+def random_camera_state(rng: random.Random, case: int) -> CameraState:
+    """Build varied but matrix-consistent camera inputs with arbitrary canaries."""
+
+    euler = (
+        rng.randrange(-128, 128) * 128,
+        rng.randrange(-128, 128) * 128,
+        0,
+    )
+    orientation = required_matrix_from_euler(euler)
+    known_flags = rng.randrange(8)
+    if case % 11 == 0:
+        known_flags &= ~CAMERA_LOOK_VALID
+    look_flags = known_flags | (rng.randrange(32) << 3)
+    position_values = (-32768, -32767, -1, 0, 1, 32766, 32767)
+    if case % 9 == 0:
+        position = tuple(rng.choice(position_values) for _ in range(3))
+    else:
+        position = tuple(rng.randrange(-32768, 32768) for _ in range(3))
+    tail = bytes(rng.randrange(256) for _ in range(STATE_SIZE - CAMERA_SIZE))
+    return empty_camera(
+        dirty=rng.randrange(256),
+        look_flags=look_flags,
+        sid=rng.randrange(65536),
+        position=position,
+        euler=euler,
+        orientation=orientation,
+        pole_yaw=rng.randrange(-128, 128) * 128,
+        tail=tail,
+    )
+
+
 def make_record(
     opcode: int,
-    primary: ObjectState,
+    primary: ObjectState | CameraState,
     auxiliary: bytes,
-    expected_primary: ObjectState,
+    expected_primary: ObjectState | CameraState,
     *,
     expected_output: bytes = b"",
     carry: bool = False,
@@ -930,6 +1427,41 @@ def directed_records() -> list[list[bytes]]:
             make_record(OP_OBJECT_STEP, state, b"", output, carry=carry)
         )
 
+    # Long held-control trajectories cross every cardinal boundary repeatedly.
+    # The original strict matrix narrowing froze pure +X pitch at tick 807
+    # when a mathematically unit coefficient rounded to +32768.
+    held_angular_velocities = (
+        (152, 0, 0),
+        (-152, 0, 0),
+        (0, 152, 0),
+        (0, -152, 0),
+        (0, 0, 152),
+        (0, 0, -152),
+        (152, -152, 304),
+        (-152, 152, -304),
+    )
+    for velocity in held_angular_velocities:
+        state = empty_state(angular_velocity=velocity)
+        for tick in range(2048):
+            output, carry = object_step(state)
+            if carry:
+                raise AssertionError(
+                    f"held rotation {velocity} failed at tick {tick}"
+                )
+            if output.orientation == state.orientation:
+                raise AssertionError(
+                    f"held rotation {velocity} froze at tick {tick}"
+                )
+            by_op[OP_OBJECT_STEP].append(
+                make_record(
+                    OP_OBJECT_STEP,
+                    state,
+                    b"",
+                    output,
+                )
+            )
+            state = output
+
     for ids in (
         (0, 0, 0, 0),
         (1, 2, 3, 4),
@@ -988,6 +1520,63 @@ def directed_records() -> list[list[bytes]]:
                     expected_output=expected,
                 )
             )
+
+    fine_atan_values = (
+        -32768, -32767, -16384, -4097, -1, 0, 1, 4095, 16384,
+        32767,
+    )
+    for y in fine_atan_values:
+        for x in fine_atan_values:
+            by_op[OP_ATAN2_FINE].append(
+                make_record(
+                    OP_ATAN2_FINE,
+                    empty_state(),
+                    struct.pack("<hh", y, x),
+                    empty_state(),
+                    expected_output=struct.pack("<h", atan2_fine(y, x)),
+                )
+            )
+    for maximum in (64, 511, 1024, 16384, 32767, 32768):
+        for index in range(65):
+            minimum = min(maximum, (maximum * index + 32) // 64)
+            for y, x in (
+                (minimum, maximum),
+                (maximum, minimum),
+                (-minimum, maximum),
+                (minimum, -maximum),
+            ):
+                if check_s16(y) and check_s16(x):
+                    by_op[OP_ATAN2_FINE].append(
+                        make_record(
+                            OP_ATAN2_FINE,
+                            empty_state(),
+                            struct.pack("<hh", y, x),
+                            empty_state(),
+                            expected_output=struct.pack(
+                                "<h", atan2_fine(y, x),
+                            ),
+                        )
+                    )
+
+    fine_angles = {
+        -32768, -32767, -16384, -8192, -1, 0, 1, 8192, 16384,
+        32767,
+    }
+    for phase in range(256):
+        boundary = phase * 128
+        for offset in (-1, 0, 1, 63, 64, 65, 127):
+            fine_angles.add(s16(boundary + offset))
+    for angle in sorted(fine_angles):
+        sine, cosine = sincos_fine(angle)
+        by_op[OP_SINCOS_FINE].append(
+            make_record(
+                OP_SINCOS_FINE,
+                empty_state(),
+                struct.pack("<h", angle),
+                empty_state(),
+                expected_output=struct.pack("<hh", sine, cosine),
+            )
+        )
 
     asin_values = {-32768, -32767, -1, 0, 1, 32767}
     for threshold in ASIN_THRESHOLDS:
@@ -1068,6 +1657,266 @@ def directed_records() -> list[list[bytes]]:
                 expected_output=expected_builder_output(state),
             )
         )
+
+    camera_seed = empty_camera(
+        dirty=0xF4,
+        look_flags=0xED,
+        sid=0xBEEF,
+        position=(32767, -32768, 12345),
+        euler=(4096, -6144, 0),
+        pole_yaw=10240,
+        tail=bytes(range(STATE_SIZE - CAMERA_SIZE)),
+    )
+    for sid, position in (
+        (0, (0, 0, 0)),
+        (1, (1, -1, 32767)),
+        (0x8000, (-32768, 32767, -32768)),
+        (0xFFFF, (12345, -23456, 30001)),
+    ):
+        by_op[OP_CAMERA_INIT].append(
+            make_record(
+                OP_CAMERA_INIT,
+                camera_seed,
+                struct.pack("<Hhhh", sid, *position),
+                camera_init(camera_seed, sid, position),
+            )
+        )
+    alias_sid = 0x2468
+    by_op[OP_CAMERA_INIT].append(
+        make_record(
+            OP_CAMERA_INIT,
+            camera_seed,
+            struct.pack("<Hhhh", alias_sid, 111, 222, 333),
+            camera_init(camera_seed, alias_sid, camera_seed.position),
+            mode=1,
+        )
+    )
+
+    def append_camera_aim(
+        opcode: int,
+        camera: CameraState,
+        target: Sequence[int],
+        policy: int,
+    ) -> CameraState:
+        expected, carry = camera_aim_at_point(camera, target, policy)
+        if opcode == OP_CAMERA_AIM_POINT:
+            auxiliary = vec_payload(target) + bytes((policy & 0xFF,))
+        else:
+            auxiliary = empty_state(
+                dirty=0xF3,
+                reserved=policy,
+                sid=0x4567,
+                oid=0x89AB,
+                mid=0xCDEF,
+                bmid=0x0123,
+                position=target,
+                linear_velocity=(111, -222, 333),
+                angular_velocity=(-444, 555, -666),
+            ).pack()
+        by_op[opcode].append(
+            make_record(
+                opcode,
+                camera,
+                auxiliary,
+                expected,
+                carry=carry,
+            )
+        )
+        return expected
+
+    for opcode in (OP_CAMERA_AIM_POINT, OP_CAMERA_AIM_OBJECT):
+        base = empty_camera(
+            dirty=0xA0,
+            look_flags=0xE0,
+            sid=0x1234,
+            position=(0, 0, 0),
+            euler=(2048, -4096, 0),
+            pole_yaw=6144,
+            tail=bytes((0xD0 + index) & 0xFF for index in range(
+                STATE_SIZE - CAMERA_SIZE
+            )),
+        )
+        for target in (
+            (1, 0, 0),
+            (-1, 0, 0),
+            (0, 1, 0),
+            (0, -1, 0),
+            (0, 0, 1),
+            (0, 0, -1),
+            (1, 1, 1),
+            (-1, 1, -1),
+            (32767, -32768, 12345),
+        ):
+            for policy in (CAMERA_ROLL_UPRIGHT, CAMERA_ROLL_CONTINUOUS):
+                append_camera_aim(opcode, base, target, policy)
+
+        endpoint_cases = (
+            ((-32768, -32768, -32768), (32767, 32767, 32767)),
+            ((32767, 32767, 32767), (-32768, -32768, -32768)),
+            ((-32768, 32767, -32768), (32767, -32768, 32767)),
+            ((32767, -32768, 32767), (-32768, 32767, -32768)),
+        )
+        for position, target in endpoint_cases:
+            camera = replace(base, position=position)
+            append_camera_aim(
+                opcode, camera, target, CAMERA_ROLL_UPRIGHT,
+            )
+            append_camera_aim(
+                opcode, camera, target, CAMERA_ROLL_CONTINUOUS,
+            )
+
+        for policy in (CAMERA_ROLL_UPRIGHT, CAMERA_ROLL_CONTINUOUS, 2, 255):
+            append_camera_aim(opcode, base, base.position, policy)
+        for invalid_policy in (2, 127, 255):
+            append_camera_aim(opcode, base, (1, 2, 3), invalid_policy)
+
+        # Exact pole-cone entry boundary: h <= |dy|/32.
+        outside = replace(
+            base,
+            look_flags=0xA0 | CAMERA_LOOK_VALID,
+            euler=(0, 0, 0),
+            orientation=IDENTITY,
+            pole_yaw=0,
+        )
+        for horizontal in (31, 32, 33):
+            append_camera_aim(
+                opcode,
+                outside,
+                (horizontal, 1024, 0),
+                CAMERA_ROLL_UPRIGHT,
+            )
+
+        # Exact hysteretic retention boundary: h <= |dy|/16.
+        inside = replace(
+            outside,
+            look_flags=(
+                0xA0 | CAMERA_LOOK_VALID | CAMERA_LOOK_IN_POLE
+            ),
+            euler=(8192, -4096, 0),
+            orientation=required_matrix_from_euler((8192, -4096, 0)),
+            pole_yaw=-4096,
+        )
+        for horizontal in (63, 64, 65):
+            append_camera_aim(
+                opcode,
+                inside,
+                (horizontal, 1024, 0),
+                CAMERA_ROLL_CONTINUOUS,
+            )
+
+        # Stateful north-then-south traversal. Each expected result is the
+        # next input, exercising pole memory and the inverted branch.
+        trajectory = (
+            (0, 8192, -1024),
+            (0, 8192, -128),
+            (0, 8192, 0),
+            (0, 8192, 128),
+            (0, 8192, 1024),
+            (0, 0, 1024),
+            (0, -8192, 1024),
+            (0, -8192, 128),
+            (0, -8192, 0),
+            (0, -8192, -128),
+            (0, -8192, -1024),
+            (0, 0, -1024),
+        )
+        for policy in (CAMERA_ROLL_UPRIGHT, CAMERA_ROLL_CONTINUOUS):
+            camera = replace(
+                outside,
+                dirty=0,
+                look_flags=0xA0 | CAMERA_LOOK_VALID,
+            )
+            for target in trajectory:
+                camera = append_camera_aim(
+                    opcode, camera, target, policy,
+                )
+
+        # One simulation sample may leap completely across the narrow hold
+        # cone. Closest-branch selection remains continuous even well outside
+        # the superseded 1:4 catch-up heuristic and near the horizon.
+        for horizontal in (100, 300, 999):
+            for vertical in (1000, -1000):
+                for first_z, second_z in (
+                    (-horizontal, horizontal),
+                    (horizontal, -horizontal),
+                ):
+                    camera = replace(
+                        outside,
+                        dirty=0,
+                        look_flags=0xA0 | CAMERA_LOOK_VALID,
+                        euler=(0, 0, 0),
+                        orientation=IDENTITY,
+                    )
+                    camera = append_camera_aim(
+                        opcode,
+                        camera,
+                        (0, vertical, first_z),
+                        CAMERA_ROLL_CONTINUOUS,
+                    )
+                    append_camera_aim(
+                        opcode,
+                        camera,
+                        (0, vertical, second_z),
+                        CAMERA_ROLL_CONTINUOUS,
+                    )
+
+        # Identity to exact +Z makes upright-yaw and inverted-pitch paths
+        # equally long. The prior branch bit is the deterministic tie-break.
+        for prior_inverted in (False, True):
+            tie_camera = replace(
+                outside,
+                dirty=0,
+                look_flags=(
+                    0xA0
+                    | CAMERA_LOOK_VALID
+                    | (
+                        CAMERA_LOOK_INVERTED
+                        if prior_inverted
+                        else 0
+                    )
+                ),
+                euler=(0, 0, 0),
+                orientation=IDENTITY,
+            )
+            append_camera_aim(
+                opcode,
+                tie_camera,
+                (0, 0, 1000),
+                CAMERA_ROLL_CONTINUOUS,
+            )
+
+        # Repeating one solved pose must not invent a new dirty bit.
+        solved, carry = camera_aim_at_point(
+            outside, (1234, -2345, 3000), CAMERA_ROLL_UPRIGHT,
+        )
+        if carry:
+            raise AssertionError("directed camera aim unexpectedly failed")
+        solved = replace(solved, dirty=solved.dirty & ~CAMERA_DIRTY_ROTATION)
+        append_camera_aim(
+            opcode,
+            solved,
+            (1234, -2345, 3000),
+            CAMERA_ROLL_UPRIGHT,
+        )
+
+        # The inverted horizontal half-turn chooses its sign from prior pitch.
+        for prior_pitch in (-128, 128):
+            inverted = replace(
+                outside,
+                look_flags=(
+                    0xA0 | CAMERA_LOOK_VALID | CAMERA_LOOK_INVERTED
+                ),
+                euler=(prior_pitch, 0, 0),
+                orientation=required_matrix_from_euler(
+                    (prior_pitch, 0, 0),
+                ),
+            )
+            append_camera_aim(
+                opcode,
+                inverted,
+                (0, 0, 1024),
+                CAMERA_ROLL_CONTINUOUS,
+            )
 
     return by_op
 
@@ -1187,8 +2036,64 @@ def random_records(
                 expected_direct = expected_builder_output(
                     state, force_create=True,
                 )
-            else:
+            elif opcode == OP_OBJECT_BUILD_NEXT_DIRTY:
                 expected_direct = expected_builder_output(state)
+            elif opcode == OP_CAMERA_INIT:
+                camera = random_camera_state(rng, case)
+                sid = rng.randrange(65536)
+                position = tuple(
+                    rng.randrange(-32768, 32768) for _ in range(3)
+                )
+                state = camera
+                output = camera_init(camera, sid, position)
+                auxiliary = struct.pack("<Hhhh", sid, *position)
+            elif opcode in (OP_CAMERA_AIM_POINT, OP_CAMERA_AIM_OBJECT):
+                target_object = state
+                camera = random_camera_state(rng, case)
+                if case % 31 == 0:
+                    target = camera.position
+                elif case % 13 == 0:
+                    endpoint_values = (-32768, -32767, 32766, 32767)
+                    target = tuple(
+                        rng.choice(endpoint_values) for _ in range(3)
+                    )
+                else:
+                    target = tuple(
+                        rng.randrange(-32768, 32768) for _ in range(3)
+                    )
+                if case % 29 == 0:
+                    policy = rng.randrange(
+                        CAMERA_ROLL_POLICY_COUNT, 256,
+                    )
+                else:
+                    policy = rng.randrange(CAMERA_ROLL_POLICY_COUNT)
+                state = camera
+                output, carry = camera_aim_at_point(
+                    camera, target, policy,
+                )
+                if opcode == OP_CAMERA_AIM_POINT:
+                    auxiliary = (
+                        vec_payload(target) + bytes((policy & 0xFF,))
+                    )
+                else:
+                    auxiliary = replace(
+                        target_object,
+                        reserved=policy,
+                        position=target,
+                    ).pack()
+            elif opcode == OP_ATAN2_FINE:
+                y = rng.randrange(-32768, 32768)
+                x = rng.randrange(-32768, 32768)
+                auxiliary = struct.pack("<hh", y, x)
+                expected_direct = struct.pack("<h", atan2_fine(y, x))
+            elif opcode == OP_SINCOS_FINE:
+                angle = rng.randrange(-32768, 32768)
+                auxiliary = struct.pack("<h", angle)
+                expected_direct = struct.pack(
+                    "<hh", *sincos_fine(angle),
+                )
+            else:
+                raise AssertionError(f"unhandled opcode {opcode}")
 
             by_op[opcode].append(
                 make_record(

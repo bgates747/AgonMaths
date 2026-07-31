@@ -8,9 +8,9 @@
 ;     +196 expected direct output (20 bytes)
 ;     +216 tail canary (8 bytes)
 ;
-; 3d_pose.result (189 bytes):
-;   "P3P1", uint24 records, uint24 errors, 18*uint16 errors by opcode,
-;   18*uint24 mixed-regression milliseconds, then first-failure diagnostics:
+; 3d_pose.result (214 bytes):
+;   "P3P3", uint24 records, uint24 errors, 23*uint16 errors by opcode,
+;   23*uint24 mixed-regression milliseconds, then first-failure diagnostics:
 ;   uint24 record index, opcode, actual carry, 64-byte primary, 20-byte output.
 ;
 ; Public contracts exercised by this fixture:
@@ -26,6 +26,11 @@
 ;   p3d_mat3_from_euler16      IX=matrix output, IY=Euler input
 ;   p3d_object_build_create16  IX=state, IY=15-byte packet scratch
 ;   p3d_object_build_next_dirty16 IX=state, IY=15-byte packet scratch
+;   p3d_camera_init16          IX=camera, IY=position, HL=scene ID
+;   p3d_camera_aim_at_point16  IX=camera, IY=target point, A=roll policy
+;   p3d_camera_aim_at_object16 IX=camera, IY=object state, A=roll policy
+;   p3d_atan2_fine16           HL=Y, DE=X, result HL
+;   p3d_sincos_fine16          HL=angle, results BC=sin and DE=cos
 ;
 ; All APIs preserve IX/IY and use carry to report a transactional failure.
 
@@ -41,7 +46,7 @@
 
 record_size: equ 224
 batch_max_records: equ 255
-op_count: equ 18
+op_count: equ 23
 
 record_primary: equ 4
 record_aux: equ 68
@@ -168,6 +173,16 @@ run_tests:
     jp z,@object_build_create
     dec a
     jp z,@object_build_next_dirty
+    dec a
+    jp z,@camera_init
+    dec a
+    jp z,@camera_aim_point
+    dec a
+    jp z,@camera_aim_object
+    dec a
+    jp z,@atan2_fine
+    dec a
+    jp z,@sincos_fine
     jp @api_failed
 
 @mat3_mul:
@@ -371,6 +386,79 @@ run_tests:
     ld (iy+17),a
     ld a,1
     ld (check_return_hl),a
+    jp @api_done
+
+@camera_init:
+    ld a,(iy+2)
+    ld hl,0xa50000
+    ld l,(iy+record_aux)
+    ld h,(iy+record_aux+1)
+    lea ix,iy+record_primary
+    or a
+    jr nz,@camera_init_alias
+    lea iy,iy+record_aux+2
+    jr @camera_init_ready
+@camera_init_alias:
+    lea iy,ix+p3d_camera_world_position
+@camera_init_ready:
+    ld (expected_ix),ix
+    ld (expected_iy),iy
+    call p3d_camera_init16
+    jp @api_done
+
+@camera_aim_point:
+    ld a,(iy+record_aux+6)
+    lea ix,iy+record_primary
+    lea iy,iy+record_aux
+    ld (expected_ix),ix
+    ld (expected_iy),iy
+    call p3d_camera_aim_at_point16
+    jp @api_done
+
+@camera_aim_object:
+    ld a,(iy+record_aux+p3d_object_reserved)
+    lea ix,iy+record_primary
+    lea iy,iy+record_aux
+    ld (expected_ix),ix
+    ld (expected_iy),iy
+    call p3d_camera_aim_at_object16
+    jp @api_done
+
+@atan2_fine:
+    ld hl,0xa50000
+    ld de,0x5a0000
+    ld l,(iy+record_aux)
+    ld h,(iy+record_aux+1)
+    ld e,(iy+record_aux+2)
+    ld d,(iy+record_aux+3)
+    lea ix,iy+record_primary
+    lea iy,iy+record_aux
+    ld (expected_ix),ix
+    ld (expected_iy),iy
+    call p3d_atan2_fine16
+    ld a,l
+    ld (direct_output+0),a
+    ld a,h
+    ld (direct_output+1),a
+    jp @api_done
+
+@sincos_fine:
+    ld hl,0xa50000
+    ld l,(iy+record_aux)
+    ld h,(iy+record_aux+1)
+    lea ix,iy+record_primary
+    lea iy,iy+record_aux
+    ld (expected_ix),ix
+    ld (expected_iy),iy
+    call p3d_sincos_fine16
+    ld a,c
+    ld (direct_output+0),a
+    ld a,b
+    ld (direct_output+1),a
+    ld a,e
+    ld (direct_output+2),a
+    ld a,d
+    ld (direct_output+3),a
 
 @api_done:
     call capture_carry
@@ -966,6 +1054,31 @@ print_report:
     ld hl,(times_by_op+51)
     call test_print_u24
     call test_print_newline
+    call test_print_inline
+    asciz "  camera init:     "
+    ld hl,(times_by_op+54)
+    call test_print_u24
+    call test_print_newline
+    call test_print_inline
+    asciz "  camera aim point:"
+    ld hl,(times_by_op+57)
+    call test_print_u24
+    call test_print_newline
+    call test_print_inline
+    asciz "  camera aim obj:  "
+    ld hl,(times_by_op+60)
+    call test_print_u24
+    call test_print_newline
+    call test_print_inline
+    asciz "  fine atan2:      "
+    ld hl,(times_by_op+63)
+    call test_print_u24
+    call test_print_newline
+    call test_print_inline
+    asciz "  fine sin/cos:    "
+    ld hl,(times_by_op+66)
+    call test_print_u24
+    call test_print_newline
     ret
 
 test_print_inline:
@@ -1063,11 +1176,11 @@ tail_canary:
     db 0x5a,0x5b,0x58,0x59,0x5e,0x5f,0x5c,0x5d
 
 result_data:
-    db "P3P1"
+    db "P3P3"
 records: dl 0
 errors: dl 0
-errors_by_op: blkb 36,0
-times_by_op: blkb 54,0
+errors_by_op: blkb 46,0
+times_by_op: blkb 69,0
 first_error_record: dl 0
 first_error_opcode: db 0
 first_error_carry: db 0

@@ -1,9 +1,9 @@
 ; eZ80-local integer 3D arithmetic for Pingo-compatible values
 ;
 ; Scalar arithmetic, forward/inverse trigonometric lookup, vector and matrix
-; transforms, persistent object-pose integration, and dirty Pingo command
-; synchronization are implemented below. Include 3d_sincos_table.inc after
-; this file so its forward table references resolve.
+; transforms, persistent object-pose integration, stateful camera look-at,
+; and dirty Pingo command synchronization are implemented below. Include
+; 3d_sincos_table.inc after this file so its forward table references resolve.
 ;
 ; Pingo wire values are little-endian 16-bit quantities:
 ;
@@ -67,6 +67,35 @@ p3d_object_dirty_scale:              equ 0x04
 p3d_object_dirty_create:             equ 0x08
 p3d_object_dirty_pose:               equ 0x03
 p3d_object_dirty_all:                equ 0x0f
+
+; Packed eZ80-side state for one Pingo camera. Camera commands describe a
+; world pose, just like object commands; Pingo inverts that pose internally
+; when constructing the view matrix. The orientation is retained so later
+; camera-local movement can use the same matrix/vector primitives as objects.
+p3d_camera_dirty:                    equ 0
+p3d_camera_look_flags:               equ 1
+p3d_camera_sid:                      equ 2
+p3d_camera_world_position:           equ 4
+p3d_camera_pingo_translation:        equ p3d_camera_world_position
+p3d_camera_pingo_rotation:           equ 10
+p3d_camera_orientation:              equ 16
+p3d_camera_pole_yaw:                 equ 34
+p3d_camera_size:                     equ 36
+
+p3d_camera_dirty_position:           equ 0x01
+p3d_camera_dirty_rotation:           equ 0x02
+p3d_camera_dirty_all:                equ 0x03
+
+; Known look-at state bits. Unknown bits are caller-owned and preserved.
+p3d_camera_look_valid:               equ 0x01
+p3d_camera_look_in_pole:             equ 0x02
+p3d_camera_look_inverted:            equ 0x04
+p3d_camera_look_known:               equ 0x07
+
+; Required A-register policy for each camera aim call.
+p3d_camera_roll_upright:             equ 0
+p3d_camera_roll_continuous:          equ 1
+p3d_camera_roll_policy_count:        equ 2
 
 ; Current buffered-command Pingo selector and absolute object subcommands.
 p3d_pingo_command:                   equ 0x49
@@ -356,10 +385,15 @@ p3d_sdiv32767_32_to_16:
     or a
     jr nz,@negative
 ; Positive 32768 is outside the signed 16-bit result range.
-    bit 7,b
-    jr nz,@overflow
     ld h,b
     ld l,c
+    bit 7,h
+    jr z,@positive_ready
+; A=0 distinguishes this exact positive one-count boundary from a product
+; whose magnitude is genuinely outside the Q15-adjacent range.
+    xor a
+    jr @overflow
+@positive_ready:
     or a                    ; success: carry clear
     ret
 @negative:
@@ -377,7 +411,53 @@ p3d_sdiv32767_32_to_16:
 @range_overflow:
 ; Balance the earlier AF exchange before returning.
     ex af,af'
+    ld a,1
 @overflow:
+    scf
+    ret
+
+; Narrow a signed normalized product for a Q15 orientation coefficient.
+; Matrix composition may overshoot one by a single output count when two
+; rounded table directions mathematically land on a cardinal. Clamp only
+; that exact +/-32768 result to the representable Q15 endpoints; larger
+; magnitudes remain failures. General scalar/vector callers retain the strict
+; p3d_sdiv32767_32_to_16 contract above.
+;
+; inputs:
+;   hl:de = signed 32-bit product in bytes H:L:D:E
+; outputs:
+;   hl = signed Q15 result in -32767..32767
+;   carry clear on success, including the one-count clamp
+;   carry set for a genuine larger overflow
+; destroys:
+;   af, af', bc, de
+; preserves:
+;   bc', de', hl'
+p3d_sdiv32767_32_to_q15_16:
+    call p3d_sdiv32767_32_to_16
+    jr c,@positive_boundary
+; Strict signed narrowing legitimately admits -32768. In a Q15 orientation
+; matrix that exact endpoint is the negative one-count boundary.
+    ld a,h
+    cp 0x80
+    jr z,@check_negative_boundary
+    or a
+    ret
+@check_negative_boundary:
+    ld a,l
+    or a
+    ret nz
+    ld hl,-32767
+    or a
+    ret
+@positive_boundary:
+; A=0 is emitted only for the rounded +32768 boundary.
+    or a
+    jr nz,@genuine_overflow
+    ld hl,32767
+    or a
+    ret
+@genuine_overflow:
     scf
     ret
 
@@ -455,6 +535,192 @@ p3d_sincos16:
     ld e,(hl)
     inc hl
     ld d,(hl)
+    or a
+    ret
+
+; Linearly interpolate one signed-Q15 table component over 1/128 of a
+; coarse phase. Adjacent generated values differ by at most 804, so the
+; signed product is comfortably inside 32 bits.
+;
+; inputs:
+;   hl = signed base value
+;   de = signed next value
+;   a  = unsigned interpolation fraction 0..127
+; outputs:
+;   hl = round((base*(128-fraction)+next*fraction)/128)
+;        with halves away from zero
+;   carry clear
+; destroys:
+;   af, af', bc, de and all shadow GP registers
+; preserves:
+;   ix, iy
+p3d_lerp_q15_frac7:
+    ld b,0
+    ld c,a
+    push hl                 ; retain the base across multiplication
+    ex de,hl
+    or a
+    sbc.s hl,de             ; signed next-base
+    ld e,c
+    ld d,b
+    call p3d_smul16x16_32
+; Add signed base*128 in the opposite GP bank. p3d_sadd32 deliberately
+; returns with that opposite bank active.
+    exx
+    pop de
+    ld hl,0
+    bit 7,d
+    jr z,@base_extended
+    dec.s hl
+@base_extended:
+    ld b,7
+@base_shift:
+    sla e
+    rl d
+    rl l
+    rl h
+    djnz @base_shift
+    exx
+    call p3d_sadd32
+; Divide the signed full weighted numerator by 128 with symmetric rounding.
+    ld c,0
+    bit 7,h
+    jr z,@magnitude_ready
+    inc c
+    xor a
+    sub e
+    ld e,a
+    ld a,0
+    sbc a,d
+    ld d,a
+    ld a,0
+    sbc a,l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+@magnitude_ready:
+    ld a,e
+    add a,64
+    ld e,a
+    ld a,d
+    adc a,0
+    ld d,a
+    ld a,l
+    adc a,0
+    ld l,a
+    ld a,h
+    adc a,0
+    ld h,a
+    ld b,7
+@shift:
+    srl h
+    rr l
+    rr d
+    rr e
+    djnz @shift
+    ld h,d
+    ld l,e
+    bit 0,c
+    jr z,@signed_result_ready
+    xor a
+    sub l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+@signed_result_ready:
+; Restore the caller's original GP bank while transferring the low-word
+; result out of the bank in which p3d_sadd32 accumulated it.
+    push hl
+    exx
+    pop hl
+    or a
+    ret
+
+; Convert a Pingo rotation angle to interpolated normalized sine and cosine
+; values. Unlike p3d_sincos16, this consumes every raw angle bit. Reflection
+; into the positive half turn makes odd/even trig symmetry byte-exact.
+;
+; inputs:
+;   hl = signed Pingo rotation angle (low word)
+; outputs:
+;   bc = signed normalized sine (low word)
+;   de = signed normalized cosine (low word)
+;   carry clear
+; destroys:
+;   af, af', hl and all shadow GP registers
+; preserves:
+;   ix, iy
+p3d_sincos_fine16:
+    push ix
+    push iy
+; One binary turn is 32768 raw units. Reflect the negative half into a
+; positive magnitude so sin(-x)=-sin(x) and cos(-x)=cos(x) remain exact even
+; when interpolation rounding lands on a tie.
+    ld b,0
+    res 7,h
+    bit 6,h
+    jr z,@magnitude_ready
+    inc b
+    ex de,hl
+    ld hl,0x8000
+    or a
+    sbc.s hl,de
+@magnitude_ready:
+    ld a,l
+    and 0x7f
+    ld c,a                  ; interpolation fraction
+; index = angle >> 7.
+    ld a,h
+    add a,a
+    bit 7,l
+    jr z,@index_ready
+    inc a
+@index_ready:
+    ld e,a
+    ld d,4
+    mlt de
+    inc de
+    dec.s de                ; zero-extend UDE
+    ld ix,p3d_sincos_q15
+    add ix,de
+; Retain the fraction and reflected sign in one logical stack word.
+    ld l,c
+    ld h,b
+    push hl
+    ld iy,0
+    add iy,sp
+; Interpolate sine.
+    ld l,(ix+0)
+    ld h,(ix+1)
+    ld e,(ix+4)
+    ld d,(ix+5)
+    ld a,(iy+0)
+    call p3d_lerp_q15_frac7
+    ld a,(iy+1)
+    or a
+    jr z,@sine_ready
+    xor a
+    sub l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+@sine_ready:
+    push hl
+; Interpolate cosine.
+    ld l,(ix+2)
+    ld h,(ix+3)
+    ld e,(ix+6)
+    ld d,(ix+7)
+    ld a,(iy+0)
+    call p3d_lerp_q15_frac7
+    ex de,hl                ; DE = cosine
+    pop bc                  ; BC = sine
+    pop hl                  ; discard fraction word
+    pop iy
+    pop ix
     or a
     ret
 
@@ -696,6 +962,224 @@ p3d_atan2_16:
     or a
     ret
 
+; Return round(min/max*32768) without ever constructing the 32-bit numerator.
+; The restoring fractional division operates only on logical low words.
+;
+; inputs:
+;   hl = unsigned minimum, 0..32768
+;   de = unsigned maximum, 1..32768, and minimum <= maximum
+; outputs:
+;   hl = unsigned Q15 ratio, 0..32768
+;   carry clear
+; destroys:
+;   af, bc, de
+; preserves:
+;   ix, iy and all shadow GP registers
+p3d_ratio_q15_16:
+    or a
+    sbc.s hl,de
+    jr nz,@not_equal
+    ld hl,0x8000
+    ret
+@not_equal:
+    add.s hl,de             ; restore the minimum/remainder
+    ld bc,0                 ; quotient
+    ld a,15
+@bit_loop:
+    add.s hl,hl
+    sla c
+    rl b
+    and a                   ; clear carry without changing the loop count
+    sbc.s hl,de
+    jr nc,@set_bit
+    add.s hl,de
+    jr @bit_ready
+@set_bit:
+    inc.s bc                ; shifted quotient bit zero is known clear
+@bit_ready:
+    dec a
+    jr nz,@bit_loop
+; Round half up from the final remainder.
+    add.s hl,hl
+    and a
+    sbc.s hl,de
+    jr c,@rounded
+    inc.s bc
+@rounded:
+    push bc
+    pop hl
+    or a
+    ret
+
+; Convert one signed Cartesian direction to a fine Pingo angle. A Q15
+; min/max ratio selects and linearly interpolates 65 first-octant atan nodes.
+; The worst first-octant table/interpolation error is about 0.012 degrees;
+; atan2(0,0) is zero.
+;
+; inputs:
+;   hl = signed Y component (low word)
+;   de = signed X component (low word)
+; outputs:
+;   hl = canonical signed Pingo angle in -16384..16383
+;   carry clear
+; destroys:
+;   af, af', bc, de and all shadow GP registers
+; preserves:
+;   ix, iy
+p3d_atan2_fine16:
+    push ix
+    push iy
+; Record original X/Y signs in bits 0/1.
+    ld b,0
+    bit 7,d
+    jr z,@x_sign_ready
+    set 0,b
+@x_sign_ready:
+    bit 7,h
+    jr z,@y_sign_ready
+    set 1,b
+@y_sign_ready:
+; Unsigned magnitudes; -32768 deliberately becomes 32768.
+    bit 7,d
+    jr z,@x_magnitude_ready
+    xor a
+    sub e
+    ld e,a
+    ld a,0
+    sbc a,d
+    ld d,a
+@x_magnitude_ready:
+    bit 7,h
+    jr z,@y_magnitude_ready
+    xor a
+    sub l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+@y_magnitude_ready:
+    ld a,h
+    or l
+    or d
+    or e
+    jr nz,@nonzero
+    ld hl,0
+    pop iy
+    pop ix
+    or a
+    ret
+@nonzero:
+; IX=max magnitude, IY=min magnitude. Bit 2 records folding across 45
+; degrees so the first-octant result can be unfolded later.
+    push de
+    pop ix
+    push hl
+    pop iy
+    or a
+    sbc.s hl,de
+    jr c,@magnitudes_ordered
+    jr z,@magnitudes_ordered
+    push ix
+    push iy
+    pop ix
+    pop iy
+    set 2,b
+@magnitudes_ordered:
+    ld c,b
+    ld b,0
+    push bc                 ; retain sign/fold mapping
+    push iy
+    pop hl
+    push ix
+    pop de
+    call p3d_ratio_q15_16
+; An exact diagonal is the final table node and has no following entry.
+    bit 7,h
+    jr z,@interpolate
+    ld hl,4096
+    jr @octant_ready
+@interpolate:
+    push hl
+    pop iy                  ; retain ratio/fraction
+    ld a,h
+    srl a                   ; node index = ratio >> 9
+    ld e,a
+    ld d,2
+    mlt de
+    inc de
+    dec.s de
+    ld ix,p3d_atan_octant_fine_q15
+    add ix,de
+    ld c,(ix+0)
+    ld b,(ix+1)            ; BC = base node
+    ld l,(ix+2)
+    ld h,(ix+3)
+    or a
+    sbc.s hl,bc            ; HL = positive adjacent delta
+    push bc
+    push iy
+    pop de
+    ld a,d
+    and 1
+    ld d,a                 ; DE = low nine ratio bits
+    call p3d_umul16x16_32
+; round(delta*fraction/512): product < 0x10000, so adding 0x0100
+; and taking the high byte shifted once is exact.
+    inc d
+    srl d
+    ld e,d
+    ld d,0
+    pop hl
+    add.s hl,de
+@octant_ready:
+    pop bc                  ; C = sign/fold mapping
+    bit 2,c
+    jr z,@base_ready
+    ex de,hl
+    ld hl,8192
+    or a
+    sbc.s hl,de
+@base_ready:
+; Map the positive 0..quarter-turn magnitude into the original quadrant.
+    ld a,c
+    and 3
+    jr z,@phase_ready
+    dec a
+    jr z,@quadrant_ii
+    dec a
+    jr z,@quadrant_iv
+; Quadrant III: base-half-turn.
+    ld de,16384
+    or a
+    sbc.s hl,de
+    jr @phase_ready
+@quadrant_ii:
+    ex de,hl
+    ld hl,16384
+    or a
+    sbc.s hl,de
+; Canonicalize the exact negative-X axis from +half-turn to -half-turn.
+    ld a,h
+    cp 0x40
+    jr nz,@phase_ready
+    ld a,l
+    or a
+    jr nz,@phase_ready
+    set 7,h
+    jr @phase_ready
+@quadrant_iv:
+    xor a
+    sub l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+@phase_ready:
+    pop iy
+    pop ix
+    or a
+    ret
+
 ; Convert one signed normalized sine coefficient to the nearest canonical
 ; pitch in -1/4..+1/4 turn. Exact ties choose the smaller magnitude.
 ;
@@ -797,6 +1281,208 @@ p3d_asin16:
     add.s hl,hl
     pop ix
     or a
+    ret
+
+; Unsigned 24-bit integer square root used by the camera look-at solver.
+;
+; This is deliberately an internal-width exception to the library's normal
+; logical-low-word convention: the radicand is a genuine UHL:H:L value.
+; Camera position inputs and emitted angles remain 16-bit, and the solver
+; bounds its squared horizontal intermediate below 2^23 before calling here.
+;
+; inputs:
+;   uhl:h:l = unsigned 24-bit radicand
+; outputs:
+;   ude:d:e = floor(sqrt(input))
+;   uhl:h:l = input - result^2
+;   carry clear
+; destroys:
+;   af, bc, de, hl
+; preserves:
+;   ix, iy and all shadow registers
+;
+; Adapted and namespaced from the established AgonMaths sqrt24 routine,
+; credited there to xeda112358.
+p3d_lookat_isqrt24:
+    ld bc,0
+    ld de,0
+    xor a
+    ld b,l
+    push bc
+    ld b,a
+    ld l,a
+; Iteration 1
+    add hl,hl
+    rl c
+    add hl,hl
+    rl c
+    sub c
+    jr nc,$+6
+    inc e
+    inc e
+    cpl
+    ld c,a
+; Iteration 2
+    add hl,hl
+    rl c
+    add hl,hl
+    rl c
+    rl e
+    ld a,e
+    sub c
+    jr nc,$+6
+    inc e
+    inc e
+    cpl
+    ld c,a
+; Iteration 3
+    add hl,hl
+    rl c
+    add hl,hl
+    rl c
+    rl e
+    ld a,e
+    sub c
+    jr nc,$+6
+    inc e
+    inc e
+    cpl
+    ld c,a
+; Iteration 4
+    add hl,hl
+    rl c
+    add hl,hl
+    rl c
+    rl e
+    ld a,e
+    sub c
+    jr nc,$+6
+    inc e
+    inc e
+    cpl
+    ld c,a
+; Iteration 5
+    add hl,hl
+    rl c
+    add hl,hl
+    rl c
+    rl e
+    ld a,e
+    sub c
+    jr nc,$+6
+    inc e
+    inc e
+    cpl
+    ld c,a
+; Iteration 6
+    add hl,hl
+    rl c
+    add hl,hl
+    rl c
+    rl e
+    ld a,e
+    sub c
+    jr nc,$+6
+    inc e
+    inc e
+    cpl
+    ld c,a
+; Iteration 7
+    add hl,hl
+    rl c
+    add hl,hl
+    rl c
+    rl b
+    ex de,hl
+    add hl,hl
+    push hl
+    sbc hl,bc
+    jr nc,$+8
+    ld a,h
+    cpl
+    ld b,a
+    ld a,l
+    cpl
+    ld c,a
+    pop hl
+    jr nc,$+4
+    inc hl
+    inc hl
+    ex de,hl
+; Iteration 8
+    add hl,hl
+    ld l,c
+    ld h,b
+    adc hl,hl
+    adc hl,hl
+    ex de,hl
+    add hl,hl
+    sbc hl,de
+    add hl,de
+    ex de,hl
+    jr nc,$+6
+    sbc hl,de
+    inc de
+    inc de
+; Iteration 9
+    pop af
+    rla
+    adc hl,hl
+    rla
+    adc hl,hl
+    ex de,hl
+    add hl,hl
+    sbc hl,de
+    add hl,de
+    ex de,hl
+    jr nc,$+6
+    sbc hl,de
+    inc de
+    inc de
+; Iteration 10
+    rla
+    adc hl,hl
+    rla
+    adc hl,hl
+    ex de,hl
+    add hl,hl
+    sbc hl,de
+    add hl,de
+    ex de,hl
+    jr nc,$+6
+    sbc hl,de
+    inc de
+    inc de
+; Iteration 11
+    rla
+    adc hl,hl
+    rla
+    adc hl,hl
+    ex de,hl
+    add hl,hl
+    sbc hl,de
+    add hl,de
+    ex de,hl
+    jr nc,$+6
+    sbc hl,de
+    inc de
+    inc de
+; Iteration 12
+    rla
+    adc hl,hl
+    rla
+    adc hl,hl
+    ex de,hl
+    add hl,hl
+    sbc hl,de
+    add hl,de
+    ex de,hl
+    jr nc,$+6
+    sbc hl,de
+    inc de
+    inc de
+    rr d
+    rr e
     ret
 
 ; ---------------------------------------------------------------------------
@@ -933,6 +1619,23 @@ p3d_rot_mulsub_norm:
     ret c
     jp p3d_sdiv32767_32_to_16
 
+; Matrix-row equivalents clamp only the exact +/-32768 Q15 boundary.
+p3d_mat_rot_muladd_norm:
+    call p3d_smul16x16_32
+    exx
+    call p3d_smul16x16_32
+    call p3d_sadd32
+    ret c
+    jp p3d_sdiv32767_32_to_q15_16
+
+p3d_mat_rot_mulsub_norm:
+    call p3d_smul16x16_32
+    exx
+    call p3d_smul16x16_32
+    call p3d_ssub32
+    ret c
+    jp p3d_sdiv32767_32_to_q15_16
+
 ; Rotate one signed 16-bit vec3 around the X axis in place.
 ;
 ; inputs:
@@ -946,19 +1649,19 @@ p3d_rot_mulsub_norm:
 ;   af, af', bc, de, hl, bc', de', hl'
 ; preserves:
 ;   ix, iy; vector is unchanged on failure
-p3d_vec3_rotate_x16:
+    MACRO P3D_VEC3_ROTATE_X_BODY mulsub_routine, muladd_routine
     push iy
     push hl
     call p3d_sincos16
     P3D_ROT_LOAD_COS_SIN p3d_vec3_y,p3d_vec3_z
-    call p3d_rot_mulsub_norm
+    call mulsub_routine
     jr c,@first_failed
     push hl
     pop iy
     pop hl
     call p3d_sincos16
     P3D_ROT_LOAD_SIN_COS p3d_vec3_y,p3d_vec3_z
-    call p3d_rot_muladd_norm
+    call muladd_routine
     jr c,@second_failed
     ld e,l
     ld d,h
@@ -980,6 +1683,14 @@ p3d_vec3_rotate_x16:
     pop iy
     scf
     ret
+    ENDMACRO
+
+p3d_vec3_rotate_x16:
+    P3D_VEC3_ROTATE_X_BODY p3d_rot_mulsub_norm,p3d_rot_muladd_norm
+
+; Internal Q15 row rotation used only by orientation matrices.
+p3d_mat3_row_rotate_x16:
+    P3D_VEC3_ROTATE_X_BODY p3d_mat_rot_mulsub_norm,p3d_mat_rot_muladd_norm
 
 ; Rotate one signed 16-bit vec3 around the Y axis in place.
 ;
@@ -994,19 +1705,19 @@ p3d_vec3_rotate_x16:
 ;   af, af', bc, de, hl, bc', de', hl'
 ; preserves:
 ;   ix, iy; vector is unchanged on failure
-p3d_vec3_rotate_y16:
+    MACRO P3D_VEC3_ROTATE_Y_BODY muladd_routine, mulsub_routine
     push iy
     push hl
     call p3d_sincos16
     P3D_ROT_LOAD_COS_SIN p3d_vec3_x,p3d_vec3_z
-    call p3d_rot_muladd_norm
+    call muladd_routine
     jr c,@first_failed
     push hl
     pop iy
     pop hl
     call p3d_sincos16
     P3D_ROT_LOAD_COS_SIN p3d_vec3_z,p3d_vec3_x
-    call p3d_rot_mulsub_norm
+    call mulsub_routine
     jr c,@second_failed
     ld e,l
     ld d,h
@@ -1028,6 +1739,14 @@ p3d_vec3_rotate_y16:
     pop iy
     scf
     ret
+    ENDMACRO
+
+p3d_vec3_rotate_y16:
+    P3D_VEC3_ROTATE_Y_BODY p3d_rot_muladd_norm,p3d_rot_mulsub_norm
+
+; Internal Q15 row rotation used only by orientation matrices.
+p3d_mat3_row_rotate_y16:
+    P3D_VEC3_ROTATE_Y_BODY p3d_mat_rot_muladd_norm,p3d_mat_rot_mulsub_norm
 
 ; Rotate one signed 16-bit vec3 around the Z axis in place.
 ;
@@ -1042,19 +1761,19 @@ p3d_vec3_rotate_y16:
 ;   af, af', bc, de, hl, bc', de', hl'
 ; preserves:
 ;   ix, iy; vector is unchanged on failure
-p3d_vec3_rotate_z16:
+    MACRO P3D_VEC3_ROTATE_Z_BODY mulsub_routine, muladd_routine
     push iy
     push hl
     call p3d_sincos16
     P3D_ROT_LOAD_COS_SIN p3d_vec3_x,p3d_vec3_y
-    call p3d_rot_mulsub_norm
+    call mulsub_routine
     jr c,@first_failed
     push hl
     pop iy
     pop hl
     call p3d_sincos16
     P3D_ROT_LOAD_SIN_COS p3d_vec3_x,p3d_vec3_y
-    call p3d_rot_muladd_norm
+    call muladd_routine
     jr c,@second_failed
     ld e,l
     ld d,h
@@ -1076,6 +1795,14 @@ p3d_vec3_rotate_z16:
     pop iy
     scf
     ret
+    ENDMACRO
+
+p3d_vec3_rotate_z16:
+    P3D_VEC3_ROTATE_Z_BODY p3d_rot_mulsub_norm,p3d_rot_muladd_norm
+
+; Internal Q15 row rotation used only by orientation matrices.
+p3d_mat3_row_rotate_z16:
+    P3D_VEC3_ROTATE_Z_BODY p3d_mat_rot_mulsub_norm,p3d_mat_rot_muladd_norm
 
 ; Apply Pingo-order Euler rotations to one signed 16-bit vec3 in place.
 ;
@@ -1490,11 +2217,11 @@ p3d_mat3_dot_row_col16:
 
 ; inputs: IX=matrix, HL=Pingo angle. IX/IY and matrix are preserved on failure.
 p3d_mat3_rotate_local_x16:
-    P3D_MAT3_LOCAL_AXIS_BODY p3d_vec3_rotate_x16
+    P3D_MAT3_LOCAL_AXIS_BODY p3d_mat3_row_rotate_x16
 p3d_mat3_rotate_local_y16:
-    P3D_MAT3_LOCAL_AXIS_BODY p3d_vec3_rotate_y16
+    P3D_MAT3_LOCAL_AXIS_BODY p3d_mat3_row_rotate_y16
 p3d_mat3_rotate_local_z16:
-    P3D_MAT3_LOCAL_AXIS_BODY p3d_vec3_rotate_z16
+    P3D_MAT3_LOCAL_AXIS_BODY p3d_mat3_row_rotate_z16
 
 ; Apply one intrinsic local Euler delta to a local-to-world orientation.
 ; Fixed-point operations are deliberately ordered as:
@@ -1698,6 +2425,124 @@ p3d_mat3_from_euler16:
     pop hl
     ld (ix+0),l
     ld (ix+1),h
+    scf
+    ret
+
+; Build the fine camera local-to-world orientation for roll zero. This is the
+; closed form Ry(y)*Rx(x), avoiding the coarse general Euler rotators while
+; keeping the retained matrix byte-consistent with the emitted fine angles.
+;
+; inputs:
+;   ix -> destination matrix
+;   iy -> Pingo-angle vec3; z is ignored and must semantically be zero
+; outputs:
+;   matrix = Ry(y)*Rx(x)
+;   carry clear on success
+; destroys:
+;   af, af', bc, de, hl, bc', de', hl'
+; preserves:
+;   ix, iy
+;
+; This helper is used inside the camera's whole-state transaction. A
+; theoretical multiply failure may leave a partial destination for that
+; outer transaction to restore.
+p3d_camera_mat3_from_euler_fine16:
+    push iy
+    ld l,(iy+p3d_vec3_x)
+    ld h,(iy+p3d_vec3_x+1)
+    call p3d_sincos_fine16
+    push bc                 ; +9 sx
+    push de                 ; +6 cx
+    ld l,(iy+p3d_vec3_y)
+    ld h,(iy+p3d_vec3_y+1)
+    call p3d_sincos_fine16
+    push bc                 ; +3 sy
+    push de                 ; +0 cy
+    ld iy,0
+    add iy,sp
+
+; Direct coefficients and signs.
+    ld l,(iy+0)
+    ld h,(iy+1)
+    ld (ix+p3d_mat3_r0c0),l
+    ld (ix+p3d_mat3_r0c0+1),h
+    ld l,(iy+6)
+    ld h,(iy+7)
+    ld (ix+p3d_mat3_r1c1),l
+    ld (ix+p3d_mat3_r1c1+1),h
+    ld hl,0
+    ld (ix+p3d_mat3_r1c0),l
+    ld (ix+p3d_mat3_r1c0+1),h
+    ld l,(iy+9)
+    ld h,(iy+10)
+    xor a
+    sub l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+    ld (ix+p3d_mat3_r1c2),l
+    ld (ix+p3d_mat3_r1c2+1),h
+    ld l,(iy+3)
+    ld h,(iy+4)
+    xor a
+    sub l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+    ld (ix+p3d_mat3_r2c0),l
+    ld (ix+p3d_mat3_r2c0+1),h
+
+; r01 = sy*sx.
+    ld l,(iy+3)
+    ld h,(iy+4)
+    ld e,(iy+9)
+    ld d,(iy+10)
+    call p3d_smul_norm16
+    jr c,@failed
+    ld (ix+p3d_mat3_r0c1),l
+    ld (ix+p3d_mat3_r0c1+1),h
+; r02 = sy*cx.
+    ld l,(iy+3)
+    ld h,(iy+4)
+    ld e,(iy+6)
+    ld d,(iy+7)
+    call p3d_smul_norm16
+    jr c,@failed
+    ld (ix+p3d_mat3_r0c2),l
+    ld (ix+p3d_mat3_r0c2+1),h
+; r21 = cy*sx.
+    ld l,(iy+0)
+    ld h,(iy+1)
+    ld e,(iy+9)
+    ld d,(iy+10)
+    call p3d_smul_norm16
+    jr c,@failed
+    ld (ix+p3d_mat3_r2c1),l
+    ld (ix+p3d_mat3_r2c1+1),h
+; r22 = cy*cx.
+    ld l,(iy+0)
+    ld h,(iy+1)
+    ld e,(iy+6)
+    ld d,(iy+7)
+    call p3d_smul_norm16
+    jr c,@failed
+    ld (ix+p3d_mat3_r2c2),l
+    ld (ix+p3d_mat3_r2c2+1),h
+    pop hl
+    pop hl
+    pop hl
+    pop hl
+    pop iy
+    or a
+    ret
+@failed:
+    pop hl
+    pop hl
+    pop hl
+    pop hl
+    pop iy
     scf
     ret
 
@@ -2496,6 +3341,832 @@ p3d_object_step16:
     pop ix
     pop iy
     scf
+    ret
+
+; ---------------------------------------------------------------------------
+; Persistent eZ80-side Pingo camera state and look-at solving
+; ---------------------------------------------------------------------------
+
+; Initialize one camera state.
+;
+; inputs:
+;   ix -> destination p3d camera state
+;   iy -> initial world-position vec3
+;   hl = Pingo scene/control ID
+; outputs:
+;   copied ID/position, zero Euler pose, identity orientation, valid upright
+;   look frame, and both camera dirty bits set
+;   carry clear
+; destroys:
+;   af, bc, de, hl
+; preserves:
+;   ix, iy and all shadow registers
+; note:
+;   The position may alias the destination; every input is captured first.
+p3d_camera_init16:
+    push ix
+    push iy
+    push hl
+    ld l,(iy+p3d_vec3_x)
+    ld h,(iy+p3d_vec3_x+1)
+    push hl
+    ld l,(iy+p3d_vec3_y)
+    ld h,(iy+p3d_vec3_y+1)
+    push hl
+    ld l,(iy+p3d_vec3_z)
+    ld h,(iy+p3d_vec3_z+1)
+    push hl
+; Seed byte zero, then replicate it over the remaining camera state.
+    xor a
+    ld (ix+0),a
+    push ix
+    pop hl
+    push ix
+    pop de
+    inc de
+    ld bc,p3d_camera_size-1
+    ldir
+; Restore position Z/Y/X and scene ID.
+    pop hl
+    ld (ix+p3d_camera_world_position+p3d_vec3_z),l
+    ld (ix+p3d_camera_world_position+p3d_vec3_z+1),h
+    pop hl
+    ld (ix+p3d_camera_world_position+p3d_vec3_y),l
+    ld (ix+p3d_camera_world_position+p3d_vec3_y+1),h
+    pop hl
+    ld (ix+p3d_camera_world_position+p3d_vec3_x),l
+    ld (ix+p3d_camera_world_position+p3d_vec3_x+1),h
+    pop hl
+    ld (ix+p3d_camera_sid),l
+    ld (ix+p3d_camera_sid+1),h
+    ld a,p3d_camera_dirty_all
+    ld (ix+p3d_camera_dirty),a
+    ld a,p3d_camera_look_valid
+    ld (ix+p3d_camera_look_flags),a
+; Signed-Q15 identity orientation.
+    ld hl,32767
+    ld (ix+p3d_camera_orientation+p3d_mat3_r0c0),l
+    ld (ix+p3d_camera_orientation+p3d_mat3_r0c0+1),h
+    ld (ix+p3d_camera_orientation+p3d_mat3_r1c1),l
+    ld (ix+p3d_camera_orientation+p3d_mat3_r1c1+1),h
+    ld (ix+p3d_camera_orientation+p3d_mat3_r2c2),l
+    ld (ix+p3d_camera_orientation+p3d_mat3_r2c2+1),h
+    pop iy
+    pop ix
+    or a
+    ret
+
+; Return the exact sign and unsigned magnitude of target-camera without ever
+; forming the potentially 17-bit signed difference. XOR 0x8000 maps signed
+; words into monotonically ordered unsigned words.
+;
+; inputs:  HL=target component, DE=camera component
+; outputs: HL=unsigned magnitude 0..65535, A=1 when negative else 0
+; destroys: AF, DE; preserves BC and all shadow registers
+p3d_lookat_difference_magnitude16:
+    ld a,h
+    xor 0x80
+    ld h,a
+    ld a,d
+    xor 0x80
+    ld d,a
+    or a
+    sbc.s hl,de
+    jr nc,@positive
+    xor a
+    sub l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+    ld a,1
+    ret
+@positive:
+    xor a
+    ret
+
+; Negate one logical signed/unsigned low word.
+; input/output: HL; destroys AF; preserves every other register.
+p3d_lookat_negate16:
+    xor a
+    sub l
+    ld l,a
+    ld a,0
+    sbc a,h
+    ld h,a
+    ret
+
+; Add one half turn and return the canonical signed half-turn representative.
+; Input is one canonical p3d_atan2_fine16 result in -16384..16383.
+; input/output: HL; destroys AF,DE; preserves indexes/shadows.
+p3d_lookat_add_half_turn16:
+    ld de,16384
+    add.s hl,de
+    bit 6,h
+    ret z
+    set 7,h
+    ret
+
+; Select the exact upside-down Euler representation of the same look
+; direction. Work offsets are private to p3d_camera_aim_at_point16.
+;
+; inputs:
+;   ix -> camera state
+;   iy -> look-at work frame
+;   work +0 = canonical pitch, work +12 = canonical yaw
+; outputs:
+;   those words replaced by the equivalent inverted pitch/yaw
+; destroys:
+;   af, de, hl
+p3d_lookat_select_inverted16:
+    ld l,(iy+0)
+    ld h,(iy+1)
+    ld a,h
+    or l
+    jr nz,@nonzero_pitch
+; At the ambiguous half turn, retain the sign approached by the previous
+; camera pitch. Both words aim identically, but this avoids a raw-word jump.
+    bit 7,(ix+p3d_camera_pingo_rotation+p3d_vec3_x+1)
+    jr nz,@negative_half
+    ld hl,16384
+    jr @pitch_ready
+@negative_half:
+    ld hl,-16384
+    jr @pitch_ready
+@nonzero_pitch:
+    bit 7,h
+    jr nz,@negative_pitch
+    ex de,hl
+    ld hl,16384
+    or a
+    sbc.s hl,de
+    jr @pitch_ready
+@negative_pitch:
+    ex de,hl
+    ld hl,-16384
+    or a
+    sbc.s hl,de
+@pitch_ready:
+    ld (iy+0),l
+    ld (iy+1),h
+    ld l,(iy+12)
+    ld h,(iy+13)
+    call p3d_lookat_add_half_turn16
+    ld (iy+12),l
+    ld (iy+13),h
+    ret
+
+; Return the unsigned shortest distance between two library angles. Angles
+; are periodic modulo 32768 raw units in the generated 256-phase model.
+;
+; inputs:  HL=left angle, DE=right angle
+; outputs: HL=distance 0..16384
+; destroys: AF,DE; preserves indexes/shadows
+p3d_lookat_abs_angle_delta16:
+    or a
+    sbc.s hl,de
+    res 7,h                 ; reduce modulo one 32768-word turn
+    bit 6,h
+    ret z
+    ex de,hl
+    ld hl,0x8000
+    or a
+    sbc.s hl,de
+    ret
+
+; Compare the upright and inverted exact-phase representations against the
+; previously emitted Euler pair. The unsigned sum of two 0..16384 component
+; distances is at most 32768. An exact tie retains the prior branch.
+;
+; inputs:
+;   ix -> camera state
+;   iy -> look-at work frame with canonical pitch at +0, yaw at +12,
+;         candidate flags at +9
+; outputs:
+;   canonical pitch/yaw restored in the work frame
+;   candidate inverted flag selected/cleared for the caller to materialize
+; destroys:
+;   af, bc, de, hl
+p3d_lookat_select_closest16:
+; Preserve the canonical pair in magnitude slots no longer needed by the
+; solver at this point.
+    ld a,(iy+0)
+    ld (iy+18),a
+    ld a,(iy+1)
+    ld (iy+19),a
+    ld a,(iy+12)
+    ld (iy+15),a
+    ld a,(iy+13)
+    ld (iy+16),a
+; Upright distance = |pitch-prev_x| + |yaw-prev_y|.
+    ld l,(iy+0)
+    ld h,(iy+1)
+    ld e,(ix+p3d_camera_pingo_rotation+p3d_vec3_x)
+    ld d,(ix+p3d_camera_pingo_rotation+p3d_vec3_x+1)
+    call p3d_lookat_abs_angle_delta16
+    push hl
+    ld l,(iy+12)
+    ld h,(iy+13)
+    ld e,(ix+p3d_camera_pingo_rotation+p3d_vec3_y)
+    ld d,(ix+p3d_camera_pingo_rotation+p3d_vec3_y+1)
+    call p3d_lookat_abs_angle_delta16
+    pop de
+    add.s hl,de
+    ld (iy+6),l
+    ld (iy+7),h
+; Materialize the inverted candidate and calculate its distance.
+    call p3d_lookat_select_inverted16
+    ld l,(iy+0)
+    ld h,(iy+1)
+    ld e,(ix+p3d_camera_pingo_rotation+p3d_vec3_x)
+    ld d,(ix+p3d_camera_pingo_rotation+p3d_vec3_x+1)
+    call p3d_lookat_abs_angle_delta16
+    push hl
+    ld l,(iy+12)
+    ld h,(iy+13)
+    ld e,(ix+p3d_camera_pingo_rotation+p3d_vec3_y)
+    ld d,(ix+p3d_camera_pingo_rotation+p3d_vec3_y+1)
+    call p3d_lookat_abs_angle_delta16
+    pop de
+    add.s hl,de
+; Compare the unsigned low word; both sums are at most 0x8000.
+    ld e,(iy+6)
+    ld d,(iy+7)
+    or a
+    sbc.s hl,de
+    jr c,@choose_inverted
+    jr nz,@choose_upright
+; Equal path lengths retain the previous branch.
+    bit 2,(ix+p3d_camera_look_flags)
+    jr nz,@choose_inverted
+@choose_upright:
+    ld a,(iy+9)
+    res 2,a
+    ld (iy+9),a
+    jr @restore_canonical
+@choose_inverted:
+    ld a,(iy+9)
+    set 2,a
+    ld (iy+9),a
+@restore_canonical:
+    ld a,(iy+18)
+    ld (iy+0),a
+    ld a,(iy+19)
+    ld (iy+1),a
+    ld a,(iy+15)
+    ld (iy+12),a
+    ld a,(iy+16)
+    ld (iy+13),a
+    ret
+
+; Aim a Pingo camera at one world-space point.
+;
+; inputs:
+;   ix -> p3d camera state
+;   iy -> target world-position vec3
+;   a  = required roll policy:
+;          p3d_camera_roll_upright
+;          p3d_camera_roll_continuous
+; outputs:
+;   absolute Pingo Euler words and matching local-to-world matrix updated
+;   rotation dirty set iff the emitted Euler bytes changed
+;   carry clear on success
+;   carry set for an invalid policy or coincident camera/target, with the
+;   complete camera state unchanged
+; destroys:
+;   af, af', bc, de, hl, bc', de', hl'
+; preserves:
+;   ix, iy and the target vec3
+;
+; The solver first retains roughly eleven direction bits by scaling all three
+; exact sign/magnitude differences into a common 1024..2047 maximum. Thus
+; x^2+z^2 is below 2^23. The pole cone is scale-independent: enter when
+; horizontal <= |dy|/32 and leave only when horizontal > |dy|/16.
+;
+; Upright mode emits pitch=atan2(dy,horizontal), yaw=atan2(-dx,-dz), roll=0.
+; Continuous mode retains the equivalent inverted Euler branch after a pole
+; crossing, allowing pitch to pass through +/-90 degrees without a 180-degree
+; frame twist. Inside the hysteresis band the last reliable canonical yaw is
+; retained and pitch is the exact vertical cardinal.
+p3d_camera_look_at_point16:
+p3d_camera_aim_at_point16:
+    cp p3d_camera_roll_policy_count
+    jr c,@policy_valid
+    scf
+    ret
+@policy_valid:
+    ld c,a                  ; p3d difference helper preserves BC
+    push iy
+    ld b,0                  ; component sign bits X/Y/Z
+; Exact X magnitude/sign.
+    ld l,(iy+p3d_vec3_x)
+    ld h,(iy+p3d_vec3_x+1)
+    ld e,(ix+p3d_camera_world_position+p3d_vec3_x)
+    ld d,(ix+p3d_camera_world_position+p3d_vec3_x+1)
+    call p3d_lookat_difference_magnitude16
+    or a
+    jr z,@x_sign_ready
+    set 0,b
+@x_sign_ready:
+    inc hl
+    dec.s hl
+    push hl
+; Exact Y magnitude/sign.
+    ld l,(iy+p3d_vec3_y)
+    ld h,(iy+p3d_vec3_y+1)
+    ld e,(ix+p3d_camera_world_position+p3d_vec3_y)
+    ld d,(ix+p3d_camera_world_position+p3d_vec3_y+1)
+    call p3d_lookat_difference_magnitude16
+    or a
+    jr z,@y_sign_ready
+    set 1,b
+@y_sign_ready:
+    inc hl
+    dec.s hl
+    push hl
+; Exact Z magnitude/sign.
+    ld l,(iy+p3d_vec3_z)
+    ld h,(iy+p3d_vec3_z+1)
+    ld e,(ix+p3d_camera_world_position+p3d_vec3_z)
+    ld d,(ix+p3d_camera_world_position+p3d_vec3_z+1)
+    call p3d_lookat_difference_magnitude16
+    or a
+    jr z,@z_sign_ready
+    set 2,b
+@z_sign_ready:
+    inc hl
+    dec.s hl
+    push hl
+; Complete the seven-word private work frame. Final offsets from SP are:
+; +0 pitch/control, +3 policy, +6 horizontal/pole yaw, +9 signs/flags,
+; +12 Z magnitude/yaw, +15 Y magnitude, +18 X magnitude.
+    ld h,0
+    ld l,b
+    push hl
+    ld hl,0
+    push hl
+    ld h,0
+    ld l,c
+    push hl
+    ld hl,0
+    push hl
+    ld iy,0
+    add iy,sp
+
+; Find the maximum unsigned magnitude.
+    ld c,(iy+18)
+    ld b,(iy+19)
+    ld l,(iy+15)
+    ld h,(iy+16)
+    or a
+    sbc.s hl,bc
+    jr c,@max_y_done
+    jr z,@max_y_done
+    ld c,(iy+15)
+    ld b,(iy+16)
+@max_y_done:
+    ld l,(iy+12)
+    ld h,(iy+13)
+    or a
+    sbc.s hl,bc
+    jr c,@max_ready
+    jr z,@max_ready
+    ld c,(iy+12)
+    ld b,(iy+13)
+@max_ready:
+    ld a,b
+    or c
+    jr nz,@yaw_normalize
+; Coincident input: discard seven work words and restore the caller's IY.
+    ld hl,21
+    add hl,sp
+    ld sp,hl
+    pop iy
+    scf
+    ret
+
+; Preserve yaw precision independently of a dominant vertical component.
+; Exact X/Z differences need at most one common right shift to enter the
+; signed atan2 input range.
+@yaw_normalize:
+    push bc                 ; fine atan destroys the retained XYZ maximum
+    ld l,(iy+18)
+    ld h,(iy+19)
+    ld e,(iy+12)
+    ld d,(iy+13)
+@yaw_shift_test:
+    bit 7,h
+    jr nz,@yaw_shift
+    bit 7,d
+    jr z,@yaw_sign
+@yaw_shift:
+    srl h
+    rr l
+    srl d
+    rr e
+    jr @yaw_shift_test
+@yaw_sign:
+; yaw = atan2(-dx,-dz).
+    bit 0,(iy+9)
+    call z,p3d_lookat_negate16
+    ex de,hl
+    bit 2,(iy+9)
+    call z,p3d_lookat_negate16
+    ex de,hl
+    call p3d_atan2_fine16
+    pop bc
+    push hl                 ; park exact-pair yaw below the fixed work frame
+
+; Common right shifts guarantee x^2+z^2 < 2^23.
+@normalize_down:
+    ld a,b
+    cp 8
+    jr c,@normalize_up
+    srl b
+    rr c
+    srl (iy+19)
+    rr (iy+18)
+    srl (iy+16)
+    rr (iy+15)
+    srl (iy+13)
+    rr (iy+12)
+    jr @normalize_down
+; Common left shifts retain useful precision for close targets.
+@normalize_up:
+    ld a,b
+    cp 4
+    jr nc,@normalized
+    sla c
+    rl b
+    sla (iy+18)
+    rl (iy+19)
+    sla (iy+15)
+    rl (iy+16)
+    sla (iy+12)
+    rl (iy+13)
+    jr @normalize_up
+
+@normalized:
+; Calculate x^2+z^2 at full 32-bit width in opposite GP banks.
+    ld l,(iy+18)
+    ld h,(iy+19)
+    ld e,l
+    ld d,h
+    call p3d_umul16x16_32
+    exx
+    ld l,(iy+12)
+    ld h,(iy+13)
+    ld e,l
+    ld d,h
+    call p3d_umul16x16_32
+    call p3d_sadd32
+; The bounded sum is the real 24-bit byte sequence L:D:E. Stage it in the
+; work frame because the square-root core consumes an actual ADL HL value.
+    ld (iy+6),e
+    ld (iy+7),d
+    ld (iy+8),l
+    ld hl,(iy+6)
+    call p3d_lookat_isqrt24
+; Round the horizontal magnitude to nearest: remainder > floor(root) means
+; the next integer root is closer.
+    or a
+    sbc hl,de
+    jr c,@root_ready
+    jr z,@root_ready
+    inc.s de
+@root_ready:
+    ld (iy+6),e
+    ld (iy+7),d
+
+; Canonical pitch = atan2(dy,horizontal).
+    ld l,(iy+15)
+    ld h,(iy+16)
+    bit 1,(iy+9)
+    call nz,p3d_lookat_negate16
+    ld e,(iy+6)
+    ld d,(iy+7)
+    call p3d_atan2_fine16
+    ld (iy+0),l
+    ld (iy+1),h
+
+; Recover the separately normalized canonical yaw.
+    pop hl
+    ld (iy+12),l
+    ld (iy+13),h
+
+; Select the pole threshold according to the prior hysteresis state.
+    ld a,(ix+p3d_camera_look_flags)
+    bit 0,a
+    jr z,@test_pole_entry
+    bit 1,a
+    jr nz,@test_pole_exit
+@test_pole_entry:
+; Enter cone: horizontal <= |dy|/32.
+    ld e,(iy+15)
+    ld d,(iy+16)
+    srl d
+    rr e
+    srl d
+    rr e
+    srl d
+    rr e
+    srl d
+    rr e
+    srl d
+    rr e
+    ld l,(iy+6)
+    ld h,(iy+7)
+    or a
+    sbc.s hl,de
+    jr c,@enter_pole
+    jr z,@enter_pole
+    jp @outside_pole
+
+@test_pole_exit:
+; Retain cone: horizontal <= |dy|/16.
+    ld e,(iy+15)
+    ld d,(iy+16)
+    srl d
+    rr e
+    srl d
+    rr e
+    srl d
+    rr e
+    srl d
+    rr e
+    ld l,(iy+6)
+    ld h,(iy+7)
+    or a
+    sbc.s hl,de
+    jr c,@remain_in_pole
+    jr z,@remain_in_pole
+    jp @leave_pole
+
+@enter_pole:
+; The exact vertical cardinal removes in-cone pitch jitter.
+    ld hl,8192
+    bit 1,(iy+9)
+    jr z,@entry_pitch_ready
+    ld hl,-8192
+@entry_pitch_ready:
+    ld (iy+0),l
+    ld (iy+1),h
+; Store the previous reliable *canonical* yaw. An inverted state carries an
+; Euler yaw a half turn away from that canonical horizontal frame.
+    ld a,(ix+p3d_camera_look_flags)
+    bit 0,a
+    jr z,@entry_use_computed_yaw
+    ld l,(ix+p3d_camera_pingo_rotation+p3d_vec3_y)
+    ld h,(ix+p3d_camera_pingo_rotation+p3d_vec3_y+1)
+    bit 2,a
+    call nz,p3d_lookat_add_half_turn16
+    jr @entry_yaw_ready
+@entry_use_computed_yaw:
+    ld l,(iy+12)
+    ld h,(iy+13)
+@entry_yaw_ready:
+    ld (iy+6),l
+    ld (iy+7),h
+    ld a,1
+    ld (iy+10),a           ; commit the new pole yaw
+    ld a,(ix+p3d_camera_look_flags)
+    bit 0,a
+    jr nz,@entry_frame_valid
+    res 2,a
+@entry_frame_valid:
+    set 0,a
+    set 1,a
+    ld l,(iy+3)
+    ld h,0
+    ld de,p3d_camera_roll_upright
+    or a
+    sbc.s hl,de
+    jr nz,@entry_policy_ready
+    res 2,a
+@entry_policy_ready:
+    ld (iy+9),a            ; original signs are no longer needed
+    ld l,(iy+6)
+    ld h,(iy+7)
+    bit 2,a
+    call nz,p3d_lookat_add_half_turn16
+    ld (iy+12),l
+    ld (iy+13),h
+    jp @selection_ready
+
+@remain_in_pole:
+    ld hl,8192
+    bit 1,(iy+9)
+    jr z,@held_pitch_ready
+    ld hl,-8192
+@held_pitch_ready:
+    ld (iy+0),l
+    ld (iy+1),h
+    xor a
+    ld (iy+10),a
+    ld l,(ix+p3d_camera_pole_yaw)
+    ld h,(ix+p3d_camera_pole_yaw+1)
+    ld a,(ix+p3d_camera_look_flags)
+    bit 0,a
+    jr nz,@held_frame_valid
+    res 2,a
+@held_frame_valid:
+    set 0,a
+    set 1,a
+    ld e,(iy+3)
+    ld d,0
+    push hl
+    ld hl,p3d_camera_roll_upright
+    or a
+    sbc.s hl,de
+    pop hl
+    jr nz,@held_policy_ready
+    res 2,a
+@held_policy_ready:
+    ld (iy+9),a
+    bit 2,a
+    call nz,p3d_lookat_add_half_turn16
+    ld (iy+12),l
+    ld (iy+13),h
+    jp @selection_ready
+
+@leave_pole:
+    xor a
+    ld (iy+10),a
+    ld a,(ix+p3d_camera_look_flags)
+    set 0,a
+    res 1,a
+    ld (iy+9),a
+    ld a,(iy+3)
+    or a
+    jr nz,@continuous_exit
+    ld a,(iy+9)
+    res 2,a
+    jr @exit_flags_ready
+@continuous_exit:
+; A negative cosine means the canonical azimuth crossed to the opposite side
+; of the retained pole frame, so continuous mode changes Euler branch.
+    ld a,(iy+9)
+    push af
+    ld l,(iy+12)
+    ld h,(iy+13)
+    ld e,(ix+p3d_camera_pole_yaw)
+    ld d,(ix+p3d_camera_pole_yaw+1)
+    or a
+    sbc.s hl,de
+    call p3d_sincos_fine16
+    pop af
+    bit 7,d
+    jr z,@exit_flags_ready
+    xor p3d_camera_look_inverted
+@exit_flags_ready:
+    ld (iy+9),a
+    bit 2,a
+    call nz,p3d_lookat_select_inverted16
+    jp @selection_ready
+
+@outside_pole:
+    xor a
+    ld (iy+10),a
+    ld a,(ix+p3d_camera_look_flags)
+    set 0,a
+    res 1,a
+    ld (iy+9),a
+    ld a,(iy+3)
+    or a
+    jr nz,@outside_continuous
+    ld a,(iy+9)
+    res 2,a
+    ld (iy+9),a
+    jr @outside_policy_ready
+@outside_continuous:
+; Choose the representation with the smaller total wrapped pitch/yaw change.
+; This handles a pole cone skipped by an arbitrarily coarse simulation step.
+    bit 0,(ix+p3d_camera_look_flags)
+    jr z,@outside_policy_ready
+    call p3d_lookat_select_closest16
+@outside_policy_ready:
+    ld a,(iy+9)
+; A state without a prior valid frame starts on the canonical branch.
+    bit 0,(ix+p3d_camera_look_flags)
+    jr nz,@outside_flags_ready
+    res 2,a
+@outside_flags_ready:
+    ld (iy+9),a
+    bit 2,a
+    call nz,p3d_lookat_select_inverted16
+
+@selection_ready:
+; Determine byte-exact Pingo rotation dirtiness before changing the state.
+    ld a,(iy+0)
+    cp (ix+p3d_camera_pingo_rotation+p3d_vec3_x)
+    jr nz,@rotation_changed
+    ld a,(iy+1)
+    cp (ix+p3d_camera_pingo_rotation+p3d_vec3_x+1)
+    jr nz,@rotation_changed
+    ld a,(iy+12)
+    cp (ix+p3d_camera_pingo_rotation+p3d_vec3_y)
+    jr nz,@rotation_changed
+    ld a,(iy+13)
+    cp (ix+p3d_camera_pingo_rotation+p3d_vec3_y+1)
+    jr nz,@rotation_changed
+    ld a,(ix+p3d_camera_pingo_rotation+p3d_vec3_z)
+    or (ix+p3d_camera_pingo_rotation+p3d_vec3_z+1)
+    jr nz,@rotation_changed
+    xor a
+    jr @changed_ready
+@rotation_changed:
+    ld a,1
+@changed_ready:
+    ld (iy+11),a
+
+; Snapshot all 36 bytes so Euler, matrix, flags, pole memory, and dirty bits
+; remain transactional if matrix construction ever reports a failure.
+    ld hl,-p3d_camera_size
+    add hl,sp
+    ld sp,hl
+    ld hl,0
+    add hl,sp
+    push hl
+    pop de
+    push ix
+    pop hl
+    ld bc,p3d_camera_size
+    ldir
+
+; Commit the selected semantic state, then build its matching matrix.
+    ld a,(iy+9)
+    ld (ix+p3d_camera_look_flags),a
+    ld a,(iy+10)
+    or a
+    jr z,@pole_yaw_committed
+    ld a,(iy+6)
+    ld (ix+p3d_camera_pole_yaw),a
+    ld a,(iy+7)
+    ld (ix+p3d_camera_pole_yaw+1),a
+@pole_yaw_committed:
+    ld a,(iy+0)
+    ld (ix+p3d_camera_pingo_rotation+p3d_vec3_x),a
+    ld a,(iy+1)
+    ld (ix+p3d_camera_pingo_rotation+p3d_vec3_x+1),a
+    ld a,(iy+12)
+    ld (ix+p3d_camera_pingo_rotation+p3d_vec3_y),a
+    ld a,(iy+13)
+    ld (ix+p3d_camera_pingo_rotation+p3d_vec3_y+1),a
+    xor a
+    ld (ix+p3d_camera_pingo_rotation+p3d_vec3_z),a
+    ld (ix+p3d_camera_pingo_rotation+p3d_vec3_z+1),a
+    push iy
+    lea iy,ix+p3d_camera_pingo_rotation
+    lea ix,ix+p3d_camera_orientation
+    call p3d_camera_mat3_from_euler_fine16
+    lea ix,ix-p3d_camera_orientation
+    pop iy
+    jr c,@restore_camera
+    ld a,(iy+11)
+    or a
+    jr z,@camera_success
+    ld a,(ix+p3d_camera_dirty)
+    or p3d_camera_dirty_rotation
+    ld (ix+p3d_camera_dirty),a
+@camera_success:
+; Discard snapshot plus seven work words, then restore the caller's IY.
+    ld hl,p3d_camera_size+21
+    add hl,sp
+    ld sp,hl
+    pop iy
+    or a
+    ret
+
+@restore_camera:
+    ld hl,0
+    add hl,sp
+    push ix
+    pop de
+    ld bc,p3d_camera_size
+    ldir
+    ld hl,p3d_camera_size+21
+    add hl,sp
+    ld sp,hl
+    pop iy
+    scf
+    ret
+
+; Aim a camera at the retained world position of one p3d object.
+;
+; inputs:
+;   ix -> p3d camera state
+;   iy -> p3d object state
+;   a  = required roll policy, as for p3d_camera_aim_at_point16
+; outputs/destroys:
+;   as for p3d_camera_aim_at_point16
+; preserves:
+;   ix, iy and the complete object state
+p3d_camera_look_at_object16:
+p3d_camera_aim_at_object16:
+    push iy
+    lea iy,iy+p3d_object_world_position
+    call p3d_camera_aim_at_point16
+    pop iy
     ret
 
 ; ---------------------------------------------------------------------------

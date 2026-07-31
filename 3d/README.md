@@ -27,6 +27,12 @@ The design note is:
 docs/3d.md
 ```
 
+The implementation and application-qualification milestone is recorded in:
+
+```text
+docs/devlog-2026-07-30.md
+```
+
 ## Copied API includes
 
 The `.inc` files beside `3d.inc` are a project-local snapshot copied from:
@@ -50,10 +56,13 @@ behavior or test dependencies.
 
 ## Current state
 
-The library implements scalar arithmetic, forward and inverse trigonometric
-lookup, vector transforms, row-major matrix/vector and matrix/matrix
+The library implements scalar arithmetic, coarse lookup and fine interpolated
+forward/inverse trigonometry, vector transforms, row-major matrix/vector and matrix/matrix
 composition, canonical Pingo Euler import/export, and persistent eZ80-side
-object pose integration.
+object pose integration. A separate 36-byte camera state supports stateful
+aim-at-point and aim-at-object solving with explicit upright or continuous
+over-pole roll policy, pole-cone hysteresis, and a matching retained
+fine-angle orientation matrix.
 
 `p3d_object_size` is a packed 64-byte state. Named `equ` offsets expose its
 dirty flags, Pingo control/object/mesh/texture-bitmap IDs, absolute position,
@@ -63,11 +72,15 @@ the eZ80 owns the state and `p3d_object_sync16` emits only dirty absolute
 create/scale/rotation/translation commands.
 
 The established emulator-backed suites pass 60,596 scalar records and 71,834
-transform records. The pose suite contains 181,759 records, with at least
-10,000 deterministic cases per public arithmetic, pose, and packet-builder
-operation. The transform runner follows correctness with 20,000 successful,
-in-memory calls per entry point and reports loop-baseline-subtracted 60 Hz
-budgets.
+transform records. The matrix/object/camera pose suite contains 251,337
+records, with at least 10,000 deterministic cases per public arithmetic, pose,
+camera, and packet-builder operation. The transform runner follows correctness
+with 20,000 successful, in-memory calls per entry point and reports
+loop-baseline-subtracted 60 Hz budgets. A separate deterministic smoothness
+test exercises camera fly-bys, scaled trajectories, render sampling, the
+half-turn seam, and near-pole yaw precision. Long held-control pose records
+cross every Q15 cardinal in both directions and verify that matrix-only
+one-count saturation cannot stall a simulation tick.
 
 Consumers must include the implementation and its generated table, in that
 order:
