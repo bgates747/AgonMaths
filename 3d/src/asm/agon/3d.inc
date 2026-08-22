@@ -2,7 +2,7 @@
 ;
 ; Scalar arithmetic, forward/inverse trigonometric lookup, vector and matrix
 ; transforms, persistent object-pose integration, stateful camera look-at,
-; and dirty Pingo command synchronization are implemented below. Include
+; and dirty Pingo object-command synchronization are implemented below. Include
 ; 3d_sincos_table.inc after this file so its forward table references resolve.
 ;
 ; Pingo wire values are little-endian 16-bit quantities:
@@ -121,6 +121,9 @@ p3d_pingo_update_packet_size:        equ 15
 ;   af, bc
 ; preserves:
 ;   bc', de', hl'
+;
+; Algorithm credited to calc84maniac in the earlier agon-utils routine
+; mul_16_32_calc84maniac. See docs/provenance.md for the exact source history.
 p3d_umul16x16_32:
     ld b,e
     ld c,l
@@ -1302,7 +1305,8 @@ p3d_asin16:
 ;   ix, iy and all shadow registers
 ;
 ; Adapted and namespaced from the established AgonMaths sqrt24 routine,
-; credited there to xeda112358.
+; credited there to xeda112358:
+; https://www.cemetech.net/forum/viewtopic.php?t=11178&postdays=0&postorder=asc&start=0
 p3d_lookat_isqrt24:
     ld bc,0
     ld de,0
@@ -3825,7 +3829,7 @@ p3d_camera_aim_at_point16:
     ld (iy+6),e
     ld (iy+7),d
     ld (iy+8),l
-    ld hl,(iy+6)
+    ld hl,(iy+6) ; ADL24 OK: work-frame bytes 6..8 are a staged 24-bit magnitude
     call p3d_lookat_isqrt24
 ; Round the horizontal magnitude to nearest: remainder > floor(root) means
 ; the next integer root is closer.
